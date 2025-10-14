@@ -1,0 +1,10 @@
+{
+    // clangd settings: rely on default clangd in PATH; enable background indexing
+    "clangd.path": "clangd",
+    "clangd.arguments": [
+        "--background-index"
+    ],
+    // CMake extension: use the build directory created by build.sh
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.configureOnOpen": false
+}
