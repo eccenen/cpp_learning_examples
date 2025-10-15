@@ -1,7 +1,3 @@
-cmake_minimum_required(VERSION 3.10)
-
-message(STATUS "Configuring csrc/techniques subdirectory")
-
 # For each subdirectory under techniques, search for .cpp files and create executables
 file(GLOB CHILD_DIRS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/*)
 foreach(d ${CHILD_DIRS})
