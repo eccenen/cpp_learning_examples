@@ -1,0 +1,11 @@
+message(STATUS "Configuring csrc subdirectory")
+option(BUILD_EXAMPLES "Build examples in csrc" ON)
+if(BUILD_EXAMPLES)
+    # add basic and techniques subdirs if present
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/basic/CMakeLists.txt")
+        add_subdirectory(basic)
+    endif()
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/techniques/CMakeLists.txt")
+        add_subdirectory(techniques)
+    endif()
+endif()
