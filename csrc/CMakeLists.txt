@@ -8,4 +8,8 @@ if(BUILD_EXAMPLES)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/techniques/CMakeLists.txt")
         add_subdirectory(techniques)
     endif()
+    # add design_patterns subdir for design pattern examples
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/design_patterns/CMakeLists.txt")
+        add_subdirectory(design_patterns)
+    endif()
 endif()
