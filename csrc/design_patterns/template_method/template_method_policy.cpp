@@ -9,62 +9,126 @@
 类型来实现算法骨架。优点：高灵活性、零开销抽象；适用于策略在编译期已知场景。
 */
 
-template <typename Policy> class GamePolicy {
-  public:
-    void run() {
-        policy.initialize();
-        while (!policy.isFinished()) {
-            policy.makeMove();
+// --- 策略1：所有权管理策略 ---
+// 独占所有权策略 (类似 unique_ptr)
+struct ExclusiveOwnership {
+    template <typename PtrType> static void incrementReference(PtrType *) {
+        // 独占式无引用计数
+    }
+
+    template <typename PtrType> static void decrementReference(PtrType * ptr) {
+        delete ptr; // 直接删除资源
+    }
+
+    template <typename PtrType> static bool isUnique(const PtrType *) {
+        return true; // 独占资源总是“唯一”的
+    }
+};
+
+// 引用计数策略 (类似 shared_ptr)
+struct ReferenceCounting {
+    template <typename PtrType> static void incrementReference(PtrType * ptr) {
+        if (ptr) {
+            ++(ptr->ref_count); // 假设被指向的对象包含 ref_count 成员
         }
-        policy.printWinner();
     }
 
+    template <typename PtrType> static void decrementReference(PtrType * ptr) {
+        if (ptr && --(ptr->ref_count) == 0) {
+            delete ptr;
+        }
+    }
+
+    template <typename PtrType> static bool isUnique(const PtrType * ptr) {
+        return ptr && ptr->ref_count == 1;
+    }
+};
+
+// --- 策略2：检查策略 ---
+// 空指针检查策略（严格）
+struct StrictChecking {
+    template <typename T> static T * checkPointer(T * ptr) {
+        if (!ptr) {
+            throw std::runtime_error("Null pointer dereference!");
+        }
+        return ptr;
+    }
+};
+
+// 空指针检查策略（不检查）
+struct NoChecking {
+    template <typename T> static T * checkPointer(T * ptr) {
+        return ptr; // 直接返回，不做检查
+    }
+};
+
+// --- 宿主类：SmartPointer ---
+template <typename T, typename OwnershipPolicy = ExclusiveOwnership,
+          typename CheckingPolicy = StrictChecking>
+class SmartPointer : private OwnershipPolicy,
+                     private CheckingPolicy {
   private:
-    Policy policy;
-};
+    T * ptr_;
 
-struct ChessPolicy {
-    void initialize() { std::cout << "[Policy] Chess initialized.\n"; }
+  public:
+    // 构造函数
+    explicit SmartPointer(T * p = nullptr) : ptr_(p) { OwnershipPolicy::incrementReference(ptr_); }
 
-    void makeMove() {
-        std::cout << "[Policy] Chess move\n";
-        ++moves;
+    // 析构函数
+    ~SmartPointer() { OwnershipPolicy::decrementReference(ptr_); }
+
+    // 拷贝构造（根据所有权策略行为不同）
+    SmartPointer(const SmartPointer & other) : ptr_(other.ptr_) {
+        OwnershipPolicy::incrementReference(ptr_);
     }
 
-    bool isFinished() { return moves >= maxMoves; }
+    // 解引用操作
+    T & operator*() const { return *CheckingPolicy::checkPointer(ptr_); }
 
-    void printWinner() { std::cout << "[Policy] Chess winner\n"; }
+    T * operator->() const { return CheckingPolicy::checkPointer(ptr_); }
 
-    int moves    = 0;
-    int maxMoves = 2;
+    // 其他方法...
+    bool isUnique() const { return OwnershipPolicy::isUnique(ptr_); }
 };
 
-struct SoccerPolicy {
-    void initialize() { std::cout << "[Policy] Soccer initialized.\n"; }
+// --- 测试用的简单类 ---
+class MyClass {
+  public:
+    int            value;
+    // 为了支持ReferenceCounting策略，我们假设它有这个成员
+    mutable size_t ref_count = 0;
 
-    void makeMove() {
-        std::cout << "[Policy] Soccer minute\n";
-        ++minutes;
-    }
+    MyClass(int v) : value(v) {}
 
-    bool isFinished() { return minutes >= maxMinutes; }
-
-    void printWinner() { std::cout << "[Policy] Soccer winner\n"; }
-
-    int minutes    = 0;
-    int maxMinutes = 1;
+    void print() const { std::cout << "MyClass: " << value << std::endl; }
 };
 
+// --- 使用示例 ---
 int main() {
-    GamePolicy<ChessPolicy> gc;
-    std::cout << "Running [Policy] Chess:\n";
-    gc.run();
+    // 1. 类似 unique_ptr 的智能指针：独占所有权 + 严格检查
+    SmartPointer<MyClass, ExclusiveOwnership, StrictChecking> ptr1(new MyClass(42));
+    ptr1->print(); // 正常工作
+    std::cout << "Is unique? " << ptr1.isUnique() << std::endl; // 1 (true)
 
-    std::cout << "\n";
+    // 2. 类似 shared_ptr 的智能指针：引用计数 + 严格检查
+    SmartPointer<MyClass, ReferenceCounting, StrictChecking> ptr2(new MyClass(100));
+    {
+        auto ptr3 = ptr2; // 拷贝，引用计数增加
+        ptr3->print();
+        std::cout << "Is unique? " << ptr2.isUnique() << std::endl; // 0 (false)
+    } // ptr3 析构，引用计数减少
 
-    GamePolicy<SoccerPolicy> gs;
-    std::cout << "Running [Policy] Soccer:\n";
-    gs.run();
+    // 3. 高性能版本：独占所有权 + 无检查 (用于性能关键场景)
+    SmartPointer<MyClass, ExclusiveOwnership, NoChecking> ptr4(new MyClass(999));
+    // (*ptr4) 不会进行空指针检查
+
+    // 4. 尝试解引用空指针（会抛出异常）
+    try {
+        SmartPointer<MyClass, ExclusiveOwnership, StrictChecking> null_ptr(nullptr);
+        null_ptr->print(); // 这里会抛出异常
+    } catch (const std::exception & e) {
+        std::cout << "Caught exception: " << e.what() << std::endl;
+    }
 
     return 0;
 }

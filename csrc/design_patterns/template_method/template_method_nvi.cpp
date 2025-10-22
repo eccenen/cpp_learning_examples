@@ -2,17 +2,8 @@
 #include <memory>
 
 // Template Method (NVI - Non-Virtual Interface) example
-// Public non-virtual `run()` is the template method. Subclasses override
-// protected virtual primitive operations. This prevents subclasses from
-// altering the template method itself.
-
-/*
-NVI（template_method_nvi.cpp）：模板方法为 public 非虚，原语为 protected
-virtual。优点：模板方法不可被覆盖，封装更强。 private
-virtual（template_method_private_virtual.cpp）：原语声明为 private
-virtual，基类通过 protected 非虚 hooks
-转发调用私有虚函数。优点：更严格地隐藏原语，防止派生类直接调用或误用。
-*/
+// 基类中将关键的函数声明为private virtual函数，严格地隐藏原语，防止派生类直接调用或误用。
+// 派生类只能通过基类的非虚接口调用这些原语。派生类可以重写这些私有虚函数以提供具体行为。
 
 class GameNVI {
   public:

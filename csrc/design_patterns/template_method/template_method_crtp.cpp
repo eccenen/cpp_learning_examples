@@ -3,11 +3,7 @@
 
 // Template Method using CRTP (Curiously Recurring Template Pattern)
 // Static (compile-time) polymorphism: no virtual calls, better performance.
-
-/*
-静态多态：通过模板参数把派生类型传入基类（Curiously Recurring Template
-Pattern），基类通过static_cast调用派生方法实现模板方法。优点：无虚调用开销，编译期多态；缺点：需要在编译期确定类型，不能存储为同一基类指针集合。
-*/
+// 将派生类作为基类的模板参数，传入基类中，在基类中调用派生类中的方法
 template <typename Derived> class GameCRTP {
   public:
     // Template method

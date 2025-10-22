@@ -11,6 +11,8 @@
 std::function（或类似接口）来擦除具体类型，使不同无共同基类的类型可以在运行时统一调用。优点：运行时多态、无需继承；缺点：一些额外开销（std::function、内存、间接调用），需注意对象状态的共享（我已修复示例中
 lambda 捕获的问题，改为捕获 shared_ptr）。
 */
+
+#if 0
 class GameAny {
   public:
     template <typename T> GameAny(T && obj) {
@@ -90,5 +92,66 @@ int main() {
     std::cout << "Running [TypeErasure] SoccerLike:\n";
     g2.run();
 
+    return 0;
+}
+#endif
+#include <iostream>
+#include <memory>
+#include <vector>
+
+// 步骤1：定义概念接口（抽象基类）
+class DrawableConcept {
+  public:
+    virtual ~DrawableConcept()                             = default;
+    virtual void                             draw() const  = 0;
+    virtual std::unique_ptr<DrawableConcept> clone() const = 0;
+};
+
+// 步骤2：具体类型的模型（模板类）
+template <typename T> class DrawableModel : public DrawableConcept {
+  private:
+    T object_;
+
+  public:
+    DrawableModel(T obj) : object_(std::move(obj)) {}
+
+    void draw() const override {
+        object_.draw(); // 要求类型T必须有draw()方法
+    }
+
+    std::unique_ptr<DrawableConcept> clone() const override {
+        return std::make_unique<DrawableModel>(object_);
+    }
+};
+
+// 步骤3：外部包装类
+class Drawable {
+  private:
+    std::unique_ptr<DrawableConcept> pimpl_;
+
+  public:
+    // 模板构造函数 - 关键！
+    template <typename T>
+    Drawable(T obj) : pimpl_(std::make_unique<DrawableModel<T>>(std::move(obj))) {}
+
+    // 拷贝操作
+    Drawable(const Drawable & other) : pimpl_(other.pimpl_->clone()) {}
+
+    Drawable & operator=(const Drawable & other) {
+        if (this != &other) {
+            pimpl_ = other.pimpl_->clone();
+        }
+        return *this;
+    }
+
+    // 移动操作
+    Drawable(Drawable &&)             = default;
+    Drawable & operator=(Drawable &&) = default;
+
+    // 统一接口
+    void draw() const { pimpl_->draw(); }
+};
+
+int main() {
     return 0;
 }
