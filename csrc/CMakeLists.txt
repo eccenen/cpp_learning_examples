@@ -7,8 +7,8 @@ if(BUILD_EXAMPLES)
     # All subdirectories link against csrc::common to access fmt and other shared deps.
     if(NOT TARGET csrc_common)
         add_library(csrc_common INTERFACE)
-        # Link all common third-party dependencies here (fmt is found at project root)
-        target_link_libraries(csrc_common INTERFACE fmt::fmt)
+        # Link all common third-party dependencies here (fmt and spdlog are found at project root)
+        target_link_libraries(csrc_common INTERFACE fmt::fmt spdlog::spdlog)
         # Add csrc directory to include path so all subdirectories can use #include "common.h"
         target_include_directories(csrc_common INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
         # Expose a namespaced alias for cleaner usage in subdirectories
@@ -25,5 +25,9 @@ if(BUILD_EXAMPLES)
     # add design_patterns subdir for design pattern examples
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/design_patterns/CMakeLists.txt")
         add_subdirectory(design_patterns)
+    endif()
+    # add spdlog_example subdir
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/spdlog_example/CMakeLists.txt")
+        add_subdirectory(spdlog_example)
     endif()
 endif()
