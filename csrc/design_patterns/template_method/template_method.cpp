@@ -1,4 +1,5 @@
-#include <iostream>
+#include <fmt/core.h>
+
 #include <memory>
 
 // Template Method pattern example
@@ -30,16 +31,16 @@ class Chess : public AbstractGame {
     Chess() : moves(0), maxMoves(3) {}
 
   protected:
-    void initialize() override { std::cout << "Chess initialized.\n"; }
+    void initialize() override { fmt::print("Chess initialized.\n"); }
 
     void makeMove() override {
-        std::cout << "Chess move " << moves + 1 << "\n";
+        fmt::print("Chess move {}\n", moves + 1);
         ++moves;
     }
 
     bool isFinished() override { return moves >= maxMoves; }
 
-    void printWinner() override { std::cout << "Chess winner: Player 1\n"; }
+    void printWinner() override { fmt::print("Chess winner: Player 1\n"); }
 
   private:
     int moves;
@@ -51,16 +52,16 @@ class Soccer : public AbstractGame {
     Soccer() : minutes(0), maxMinutes(2) {}
 
   protected:
-    void initialize() override { std::cout << "Soccer match initialized.\n"; }
+    void initialize() override { fmt::print("Soccer match initialized.\n"); }
 
     void makeMove() override {
-        std::cout << "Soccer minute " << minutes + 1 << "\n";
+        fmt::print("Soccer minute {}\n", minutes + 1);
         ++minutes;
     }
 
     bool isFinished() override { return minutes >= maxMinutes; }
 
-    void printWinner() override { std::cout << "Soccer winner: Home team\n"; }
+    void printWinner() override { fmt::print("Soccer winner: Home team\n"); }
 
   private:
     int minutes;
@@ -69,13 +70,13 @@ class Soccer : public AbstractGame {
 
 int main() {
     std::unique_ptr<AbstractGame> game1 = std::make_unique<Chess>();
-    std::cout << "Running Chess:\n";
+    fmt::print("Running Chess:\n");
     game1->run();
 
-    std::cout << "\n";
+    fmt::print("\n");
 
     std::unique_ptr<AbstractGame> game2 = std::make_unique<Soccer>();
-    std::cout << "Running Soccer:\n";
+    fmt::print("Running Soccer:\n");
     game2->run();
 
     return 0;

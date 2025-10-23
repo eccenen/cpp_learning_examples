@@ -4,6 +4,9 @@ project(cpp_qa_lab LANGUAGES C CXX CUDA)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Find fmt once for the whole project (vcpkg toolchain file should make this work).
+find_package(fmt CONFIG REQUIRED)
+
 # Generate compile_commands.json for tools like clangd. Can be disabled by setting
 # -DEXPORT_COMPILE_COMMANDS=OFF when invoking cmake.
 option(EXPORT_COMPILE_COMMANDS "Generate compile_commands.json for clangd and other tools" ON)

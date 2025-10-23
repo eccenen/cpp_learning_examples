@@ -1,9 +1,21 @@
-#include <iostream>
+#include <fmt/core.h>
+
 #include <memory>
 
-// Template Method (NVI - Non-Virtual Interface) example
-// 基类中将关键的函数声明为private virtual函数，严格地隐藏原语，防止派生类直接调用或误用。
-// 派生类只能通过基类的非虚接口调用这些原语。派生类可以重写这些私有虚函数以提供具体行为。
+/**
+ * @file
+ * @brief NVI（Non-Virtual Interface）风格的模板方法示例。
+ *
+ * 说明：NVI 是一种 C++ 设计技巧，将模板方法设为非虚函数，而将
+ * 可变的原语操作声明为受保护的 virtual 方法。这样可以保证算法
+ * 骨架不可被子类覆盖，保持行为一致性与封装。
+ *
+ * 优点：
+ * - 模板方法不可被覆写，保证了执行顺序；
+ * - 子类可通过覆盖受保护的 virtual 原语实现行为定制；
+ *
+ * 注意：不要把模板方法声明为 virtual，否则会丧失 NVI 提供的保护。
+ */
 
 class GameNVI {
   public:
@@ -31,16 +43,16 @@ class ChessNVI : public GameNVI {
     ChessNVI() : moves(0), maxMoves(2) {}
 
   protected:
-    void initialize() override { std::cout << "[NVI] Chess initialized.\n"; }
+    void initialize() override { fmt::print("[NVI] Chess initialized.\n"); }
 
     void makeMove() override {
-        std::cout << "[NVI] Chess move " << moves + 1 << "\n";
+        fmt::print("[NVI] Chess move {}\n", moves + 1);
         ++moves;
     }
 
     bool isFinished() override { return moves >= maxMoves; }
 
-    void printWinner() override { std::cout << "[NVI] Chess winner: Player 2\n"; }
+    void printWinner() override { fmt::print("[NVI] Chess winner: Player 2\n"); }
 
   private:
     int moves;
@@ -52,16 +64,16 @@ class SoccerNVI : public GameNVI {
     SoccerNVI() : minutes(0), maxMinutes(1) {}
 
   protected:
-    void initialize() override { std::cout << "[NVI] Soccer match initialized.\n"; }
+    void initialize() override { fmt::print("[NVI] Soccer match initialized.\n"); }
 
     void makeMove() override {
-        std::cout << "[NVI] Soccer minute " << minutes + 1 << "\n";
+        fmt::print("[NVI] Soccer minute {}\n", minutes + 1);
         ++minutes;
     }
 
     bool isFinished() override { return minutes >= maxMinutes; }
 
-    void printWinner() override { std::cout << "[NVI] Soccer winner: Away team\n"; }
+    void printWinner() override { fmt::print("[NVI] Soccer winner: Away team\n"); }
 
   private:
     int minutes;
@@ -70,13 +82,13 @@ class SoccerNVI : public GameNVI {
 
 int main() {
     std::unique_ptr<GameNVI> g1 = std::make_unique<ChessNVI>();
-    std::cout << "Running [NVI] Chess:\n";
+    fmt::print("Running [NVI] Chess:\n");
     g1->run();
 
-    std::cout << "\n";
+    fmt::print("\n");
 
     std::unique_ptr<GameNVI> g2 = std::make_unique<SoccerNVI>();
-    std::cout << "Running [NVI] Soccer:\n";
+    fmt::print("Running [NVI] Soccer:\n");
     g2->run();
 
     return 0;
