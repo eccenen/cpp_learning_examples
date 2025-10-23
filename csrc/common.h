@@ -9,6 +9,7 @@
 
 // Third-party libraries
 #include <fmt/core.h>
+#include <spdlog/spdlog.h>
 
 // C++ Standard Library - Utilities
 #include <any>

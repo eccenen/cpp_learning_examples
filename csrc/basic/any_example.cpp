@@ -5,7 +5,6 @@
 // Also demonstrates spdlog for comparison with fmt::print.
 
 #include "common.h"
-#include "spdlog/spdlog.h"
 
 struct Point {
     int x;
