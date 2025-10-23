@@ -3,8 +3,7 @@
 
 // 详细说明见 https://www.yuque.com/linyun-lj2sn/ul5f4n/sm4ger2dovekluo7#RgJwr
 
-#include <iostream>
-#include <memory>
+#include "common.h"
 
 // HeapOnly: can only be created via the static create() factory which
 // returns a std::unique_ptr. Constructor is private and copy is deleted.
@@ -49,9 +48,9 @@ class HeapOnly2 {
     }
 
   private:
-    ~HeapOnly2() = default;  // private destructor
+    ~HeapOnly2() = default; // private destructor
   private:
     int value{};
 };
 
-#endif  // CPP_QA_LAB_HEAP_ONLY_H
+#endif // CPP_QA_LAB_HEAP_ONLY_H

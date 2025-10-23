@@ -1,9 +1,4 @@
-#include <fmt/core.h>
-
-#include <memory>
-#include <string>
-#include <type_traits>
-#include <vector>
+#include "common.h"
 
 // 经典类型擦除 + 现代C++特性实现的模板方法接口
 class Drawable {

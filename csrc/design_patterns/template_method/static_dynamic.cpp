@@ -1,6 +1,7 @@
-#include <fmt/core.h>
+#include "common.h"
 
-#include <memory>
+// Standard library headers previously included via common.h:
+
 
 // Mix of static (compile-time) and dynamic (runtime) polymorphism.
 // We use a static template for the main algorithm but accept a runtime strategy

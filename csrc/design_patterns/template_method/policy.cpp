@@ -1,7 +1,7 @@
-#include <fmt/core.h>
+#include "common.h"
 
-#include <memory>
-#include <stdexcept>
+// Standard library headers previously included via common.h:
+
 
 /**
  * @file

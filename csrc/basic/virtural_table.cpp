@@ -1,9 +1,6 @@
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <functional>
 #include <ios>
-#include <iostream>
+
+#include "common.h"
 
 namespace {
 using func_t = void (*)();
@@ -34,18 +31,18 @@ class Derived : public Base {
 
 func_t getAddr(void * obj, unsigned int offset) {
     std::cout << "=======================" << std::endl;
-    //64位系统下，指针占8字节，因此通过(size_t *)强制转换为size_t指针类型
+    // 64位系统下，指针占8字节，因此通过(size_t *)强制转换为size_t指针类型
     auto * vptr = (size_t *) *((size_t *) obj);
     std::cout << "vptr address: 0x" << std::hex << (uintptr_t) vptr << std::endl;
-    //通过vptr指针访问virtual table，因为虚表中每个元素(虚函数指针)在64位编译器下是8个字节，
-    //因此通过*vptr取出前8字节， 后面加上偏移量就是每个函数的地址！
+    // 通过vptr指针访问virtual table，因为虚表中每个元素(虚函数指针)在64位编译器下是8个字节，
+    // 因此通过*vptr取出前8字节， 后面加上偏移量就是每个函数的地址！
 
     void * func = (void *) *(vptr + offset);
     std::cout << "func_tc address: 0x" << std::hex << (uintptr_t) func << std::dec << std::endl;
     return (func_t) func;
 }
 
-}  // namespace
+} // namespace
 
 int main(void) {
     Base *                pt = new Derived();

@@ -9,6 +9,8 @@ if(BUILD_EXAMPLES)
         add_library(csrc_common INTERFACE)
         # Link all common third-party dependencies here (fmt is found at project root)
         target_link_libraries(csrc_common INTERFACE fmt::fmt)
+        # Add csrc directory to include path so all subdirectories can use #include "common.h"
+        target_include_directories(csrc_common INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
         # Expose a namespaced alias for cleaner usage in subdirectories
         add_library(csrc::common ALIAS csrc_common)
     endif()

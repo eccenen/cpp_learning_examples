@@ -1,9 +1,4 @@
-#include <fmt/core.h>
-
-#include <any>
-#include <functional>
-#include <memory>
-#include <vector>
+#include "common.h"
 
 namespace { // 类型擦除的模板方法接口
 

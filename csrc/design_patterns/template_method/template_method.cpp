@@ -1,6 +1,7 @@
-#include <fmt/core.h>
+#include "common.h"
 
-#include <memory>
+// Standard library headers previously included via common.h:
+
 
 // Template Method pattern example
 // AbstractClass defines the template method `run` which calls primitive operations

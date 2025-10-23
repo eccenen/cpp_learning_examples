@@ -1,6 +1,7 @@
-#include <fmt/core.h>
+#include "common.h"
 
-#include <memory>
+// Standard library headers previously included via common.h:
+
 
 /**
  * @file

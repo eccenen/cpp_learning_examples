@@ -4,7 +4,7 @@
 //  - delete operator new to prevent heap allocation
 //  - keep constructor public so stack allocation is allowed
 
-#include <iostream>
+#include "common.h"
 
 class StackOnly {
   public:

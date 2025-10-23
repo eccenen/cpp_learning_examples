@@ -1,6 +1,4 @@
-#include <fmt/core.h>
-
-#include <memory>
+#include "common.h"
 
 /**
  * @file

@@ -3,11 +3,7 @@
 // pointer cast, moving and storing custom types.
 // Uses fmt for formatted output (via vcpkg-installed fmt).
 
-#include <fmt/core.h>
-
-#include <any>
-#include <string>
-#include <typeinfo>
+#include "common.h"
 
 struct Point {
     int x;

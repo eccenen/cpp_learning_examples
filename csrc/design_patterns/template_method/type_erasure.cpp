@@ -20,11 +20,7 @@
  * 例，以避免捕获独立副本导致的状态不一致或无限循环。
  */
 
-#include <fmt/core.h>
-
-#include <memory>
-#include <string>
-#include <vector>
+#include "common.h"
 
 // ==== 类型擦除包装 ====
 
