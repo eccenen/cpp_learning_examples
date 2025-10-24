@@ -7,13 +7,13 @@ target_link_libraries(spdlog_example PRIVATE csrc::common)
 
 # 设置输出目录
 set_target_properties(spdlog_example PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/spdlog_example"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/third_party_examples"
 )
 
 # 为不同配置设置输出目录
 foreach(config ${CMAKE_CONFIGURATION_TYPES})
     string(TOUPPER ${config} config_upper)
     set_target_properties(spdlog_example PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY_${config_upper} "${CMAKE_BINARY_DIR}/bin/spdlog_example"
+        RUNTIME_OUTPUT_DIRECTORY_${config_upper} "${CMAKE_BINARY_DIR}/bin/third_party_examples"
     )
 endforeach()

@@ -8,11 +8,16 @@
 #define CPP_QA_LAB_CSRC_COMMON_H_
 
 // Third-party libraries
+// fmt
 #include <fmt/core.h>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
+// spdlog
 #include <spdlog/spdlog.h>
 
 // C++ Standard Library - Utilities
 #include <any>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <string>
@@ -21,10 +26,17 @@
 #include <utility>
 
 // C++ Standard Library - Containers
+#include <string>
 #include <vector>
 
 // C++ Standard Library - I/O (for legacy code only, prefer fmt)
+#include <algorithm>
+
+//
 #include <iostream>
+
+//
+#include <memory>
 
 // C Standard Library (commonly used)
 #include <cstddef>

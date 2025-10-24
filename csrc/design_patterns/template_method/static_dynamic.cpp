@@ -1,17 +1,5 @@
 #include "common.h"
 
-// Standard library headers previously included via common.h:
-
-
-// Mix of static (compile-time) and dynamic (runtime) polymorphism.
-// We use a static template for the main algorithm but accept a runtime strategy
-// for a particular primitive step.
-
-/*
-在性能敏感的部分使用静态策略（Policy
-模板），而在可插拔或运行时选择的部分使用动态策略（接口/多态）。示例展示如何将高频调用做成静态
-inline，而把可替换的“move”步骤做成 runtime plugin。
-*/
 /**
  * @file
  * @brief 静态多态 + 动态多态混合示例（Static + Dynamic polymorphism）。

@@ -26,8 +26,8 @@ if(BUILD_EXAMPLES)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/design_patterns/CMakeLists.txt")
         add_subdirectory(design_patterns)
     endif()
-    # add spdlog_example subdir
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/spdlog_example/CMakeLists.txt")
-        add_subdirectory(spdlog_example)
+    # add third_party_examples subdir for third-party library demonstrations
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party_examples/CMakeLists.txt")
+        add_subdirectory(third_party_examples)
     endif()
 endif()

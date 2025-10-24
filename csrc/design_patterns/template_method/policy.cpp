@@ -1,8 +1,5 @@
 #include "common.h"
 
-// Standard library headers previously included via common.h:
-
-
 /**
  * @file
  * @brief Policy-based 设计的模板方法示例（Policy-based Template Method）。
