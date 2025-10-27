@@ -1,33 +1,14 @@
 // Copyright 2025 The cpp-qa-lab Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
-//
-// 本示例文件系统性展示 C++ 中与函数调用相关的多种机制：
-// 1. 传统函数指针 (Free Function Pointer)
-// 2. std::function （类型擦除的可调用包装器）
-// 3. std::bind （参数绑定 / 重排）
-// 4. 成员函数指针与 std::invoke
-// 5. 递归与 std::function（含尾递归 / 捕获）
-// 6. 可调用组合 / 链式变换
-// 7. std::function 的开销、局限（与 move-only lambda 限制示例）
-//
-// 风格说明：遵循 Google C++ Style Guide：
-// - 类型名 / 类名 / 函数名 使用 PascalCase
-// - 变量名、参数名 使用 lower_snake_case
-// - 常量用 kConstant 风格（本示例中未大量使用）
+// C++ 函数与可调用对象综合示例
+// 展示：函数指针、std::function、lambda、成员函数指针、std::invoke、递归等
 
-#include "common.h" // 提供 spdlog / fmt
-
-namespace cpp_qa_lab {
-namespace basic {
+#include "common.h"
 
 // ============================================================================
-// 1. 函数指针示例 - 基础用法
+// 1. 函数指针 - 传统 C 风格函数指针
 // ============================================================================
 
-// 声明一个函数指针类型（两个 double 参数，返回 double）
-using MathOperation = double (*)(double, double);
-
+// 基础数学运算函数
 double Add(double a, double b) {
     return a + b;
 }
@@ -38,311 +19,335 @@ double Subtract(double a, double b) {
 
 double Multiply(double a, double b) {
     return a * b;
-} // 修正为真正乘法
-
-double Divide(double a, double b) {
-    if (b == 0.0) {
-        spdlog::warn("Division by zero! Return 0.");
-        return 0.0;
-    }
-    return a / b;
 }
 
-double ApplyOperation(double a, double b, MathOperation op) {
+double Divide(double a, double b) {
+    return std::abs(b) < 1e-12 ? 0.0 : a / b;
+}
+
+// 函数指针类型定义
+using BinaryOp = double (*)(double, double);
+
+// 通用二元操作函数，接受函数指针作为参数
+double ApplyBinaryOp(double a, double b, BinaryOp op) {
     return op(a, b);
 }
 
+void DemoFunctionPointers() {
+    spdlog::info("\n=== 1. 函数指针示例 ===");
+
+    BinaryOp     operations[] = { Add, Subtract, Multiply, Divide };
+    const char * names[]      = { "加法", "减法", "乘法", "除法" };
+
+    constexpr double x = 10.0, y = 3.0;
+
+    // 遍历函数指针数组
+    for (size_t i = 0; i < 4; ++i) {
+        double result = operations[i](x, y);
+        spdlog::info("{}: {:.1f} 和 {:.1f} = {:.2f}", names[i], x, y, result);
+    }
+
+    // 函数指针作为回调参数
+    double result = ApplyBinaryOp(15.0, 4.0, Multiply);
+    spdlog::info("回调函数结果: 15.0 * 4.0 = {:.1f}", result);
+}
+
 // ============================================================================
-// 2. std::function 示例 - 灵活的类型擦除包装器
+// 2. std::function 和 Lambda 表达式
 // ============================================================================
 
 class Calculator {
   public:
-    using OperationFunc = std::function<double(double, double)>;
+    using Operation = std::function<double(double, double)>;
 
-    Calculator() = default;
+    void SetOperation(Operation op) { op_ = std::move(op); }
 
-    explicit Calculator(OperationFunc op) : operation_(std::move(op)) {}
-
-    double Calculate(double a, double b) const {
-        if (operation_) {
-            return operation_(a, b);
-        }
-        spdlog::warn("No operation set! Return 0.");
-        return 0.0;
+    std::optional<double> Compute(double a, double b) const {
+        return op_ ? std::optional<double>(op_(a, b)) : std::nullopt;
     }
-
-    void SetOperation(OperationFunc op) { operation_ = std::move(op); }
 
   private:
-    OperationFunc operation_;
+    Operation op_;
 };
 
-double Power(double base, double exponent) {
-    double result = 1.0;
-    for (int i = 0; i < static_cast<int>(exponent); ++i) {
-        result *= base;
-    }
-    return result;
-}
-
-// 工厂：创建一个乘法因子 lambda
-auto CreateMultiplier(double factor) {
-    return [factor](double value) {
-        return value * factor;
+// 函数组合模板
+template <typename F, typename G> auto Compose(F f, G g) {
+    return [f = std::move(f), g = std::move(g)](auto &&... args) {
+        return f(g(std::forward<decltype(args)>(args)...));
     };
 }
 
-// ============================================================================
-// 3. std::bind 示例 - 参数重排序 / 部分绑定
-// ============================================================================
+void DemoStdFunction() {
+    spdlog::info("\n=== 2. std::function 和 Lambda 示例 ===");
 
-class Processor {
-  public:
-    void ProcessData(const std::string & data, int priority) {
-        spdlog::info("ProcessData => data:'{}' priority:{}", data, priority);
+    Calculator calc;
+
+    // 使用普通函数
+    calc.SetOperation(Add);
+    if (auto result = calc.Compute(5.0, 3.0)) {
+        spdlog::info("Add(5, 3) = {}", *result);
     }
 
-    void ProcessWithCallback(const std::string &                              data,
-                             const std::function<void(const std::string &)> & cb) {
-        spdlog::info("ProcessWithCallback => '{}'", data);
-        if (cb) {
-            cb(data);
-        }
+    // 使用 Lambda 表达式
+    calc.SetOperation([](double a, double b) { return std::pow(a, b); });
+    if (auto result = calc.Compute(2.0, 8.0)) {
+        spdlog::info("Power(2, 8) = {}", *result);
     }
-};
 
-void LogCallback(const std::string & message) {
-    spdlog::info("Callback: {}", message);
-}
+    // 函数组合
+    auto double_it = [](double x) {
+        return x * 2;
+    };
+    auto add_ten = [](double x) {
+        return x + 10;
+    };
+    auto composed = Compose(add_ten, double_it);
+    spdlog::info("函数组合: (5 * 2) + 10 = {}", composed(5.0));
 
-void ErrorCallback(const std::string & message) {
-    spdlog::warn("Error callback: {}", message);
+    // Lambda 捕获示例
+    double factor     = 2.5;
+    auto   multiplier = [factor](double x) {
+        return x * factor;
+    };
+    spdlog::info("Lambda 捕获: 7.0 * {} = {}", factor, multiplier(7.0));
 }
 
 // ============================================================================
-// 4. 成员函数指针 & std::invoke
+// 3. 成员函数指针和 std::invoke
 // ============================================================================
 
-class Accumulator {
+class Counter {
   public:
-    explicit Accumulator(int start = 0) : value_(start) {}
+    explicit Counter(int initial = 0) : value_(initial) {}
 
-    void Add(int delta) { value_ += delta; }
+    void Increment(int delta) { value_ += delta; }
+
+    void Decrement(int delta) { value_ -= delta; }
 
     int Get() const { return value_; }
 
-    // const 成员函数指针演示目标
-    int ScaleAndGet(int factor) const { return value_ * factor; }
-
+    int Multiply(int factor) const { return value_ * factor; }
   private:
     int value_;
 };
 
-// ============================================================================
-// 5. 递归与 std::function（需要自引用时）
-// ============================================================================
+// 通用调用包装器
+template <typename Callable, typename... Args>
+auto InvokeAndLog(Callable && callable, Args &&... args) {
+    using Result = std::invoke_result_t<Callable, Args...>;
 
-int FactorialClassic(int n) {
-    return (n <= 1) ? 1 : n * FactorialClassic(n - 1);
-}
-
-int FactorialWithStdFunction(int n) {
-    std::function<int(int)> fact = [&](int x) -> int {
-        return (x <= 1) ? 1 : x * fact(x - 1);
-    };
-    return fact(n);
-}
-
-// 尾递归形式（为了演示，不做尾调用优化保证）
-int FactorialTailHelper(int n, int acc) {
-    return (n <= 1) ? acc : FactorialTailHelper(n - 1, n * acc);
-}
-
-int FactorialTail(int n) {
-    return FactorialTailHelper(n, 1);
-}
-
-// ============================================================================
-// 6. 可调用组合 / 链式变换 (string pipeline)
-// ============================================================================
-
-class FunctionChain {
-  public:
-    using TransformFunc = std::function<std::string(const std::string &)>;
-
-    void AddTransform(TransformFunc f) { transforms_.push_back(std::move(f)); }
-
-    std::string Apply(const std::string & input) const {
-        std::string result = input;
-        for (const auto & t : transforms_) {
-            if (t) {
-                result = t(result);
-            }
-        }
+    if constexpr (std::is_void_v<Result>) {
+        std::invoke(std::forward<Callable>(callable), std::forward<Args>(args)...);
+        spdlog::info("调用了无返回值的可调用对象");
+    } else {
+        auto result = std::invoke(std::forward<Callable>(callable), std::forward<Args>(args)...);
+        spdlog::info("调用结果: {}", result);
         return result;
+    }
+}
+
+void DemoMemberFunctionPointers() {
+    spdlog::info("\n=== 3. 成员函数指针和 std::invoke 示例 ===");
+
+    Counter counter(10);
+
+    // 传统成员函数指针语法
+    void (Counter::*inc_ptr)(int) = &Counter::Increment;
+    (counter.*inc_ptr)(5);
+    spdlog::info("增量后: {}", counter.Get());
+
+    // 使用 std::invoke
+    std::invoke(&Counter::Decrement, counter, 3);
+    spdlog::info("减量后: {}", counter.Get());
+
+    // 带返回值的调用
+    int result = std::invoke(&Counter::Multiply, counter, 4);
+    spdlog::info("乘以 4: {}", result);
+
+    // 使用通用调用包装器
+    InvokeAndLog(&Counter::Increment, counter, 8);
+    InvokeAndLog(&Counter::Get, counter);
+}
+
+// ============================================================================
+// 4. Lambda 捕获和状态管理
+// ============================================================================
+
+class StatefulProcessor {
+  public:
+    // 创建有状态的累加器
+    auto CreateAccumulator(int initial) {
+        return [sum = initial](int value) mutable {
+            sum += value;
+            return sum;
+        };
+    }
+
+    // 创建只移动的处理器
+    auto CreateUniqueHandler(std::unique_ptr<int> ptr) {
+        return [p = std::move(ptr)]() {
+            return p ? *p : -1;
+        };
+    }
+};
+
+void DemoLambdaCaptures() {
+    spdlog::info("\n=== 4. Lambda 捕获和状态管理示例 ===");
+
+    StatefulProcessor processor;
+
+    // 可变 Lambda 维护状态
+    auto accumulator = processor.CreateAccumulator(0);
+    spdlog::info("累加器: {} -> {} -> {}", accumulator(5), accumulator(10), accumulator(3));
+
+    // 只移动 Lambda
+    auto handler = processor.CreateUniqueHandler(std::make_unique<int>(42));
+    spdlog::info("唯一处理器: {}", handler());
+
+    // Lambda 只能移动，不能复制
+    auto moved_handler = std::move(handler);
+    spdlog::info("移动后的处理器: {}", moved_handler());
+}
+
+// ============================================================================
+// 5. 管道模式和函数变换
+// ============================================================================
+
+template <typename T> class Pipeline {
+  public:
+    using Transform = std::function<T(const T &)>;
+
+    Pipeline & Add(Transform transform) {
+        transforms_.push_back(std::move(transform));
+        return *this;
+    }
+
+    T Execute(const T & input) const {
+        return std::accumulate(
+            transforms_.begin(), transforms_.end(), input,
+            [](const T & value, const Transform & transform) { return transform(value); });
     }
 
   private:
-    std::vector<TransformFunc> transforms_;
+    std::vector<Transform> transforms_;
 };
 
-std::string ToUpper(const std::string & s) {
-    std::string out = s;
-    for (char & c : out) {
-        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    }
-    return out;
+// 字符串变换工具
+std::string ToUpperCase(const std::string & str) {
+    std::string result = str;
+    std::transform(result.begin(), result.end(), result.begin(),
+                   [](unsigned char c) { return std::toupper(c); });
+    return result;
 }
 
-FunctionChain::TransformFunc AddPrefix(const std::string & prefix) {
-    return [prefix](const std::string & s) {
-        return prefix + s;
+auto AddPrefix(std::string prefix) {
+    return [p = std::move(prefix)](const std::string & str) {
+        return p + str;
     };
 }
 
-FunctionChain::TransformFunc AddSuffix(const std::string & suffix) {
-    return [suffix](const std::string & s) {
-        return s + suffix;
+auto AddSuffix(std::string suffix) {
+    return [s = std::move(suffix)](const std::string & str) {
+        return str + s;
     };
 }
 
-// ============================================================================
-// 7. std::function 的局限：move-only 捕获示例（演示说明）
-// ============================================================================
+void DemoPipeline() {
+    spdlog::info("\n=== 5. 管道模式示例 ===");
 
-// 说明：如果 lambda 捕获 std::unique_ptr（按值），该 lambda 将不可拷贝，
-// 无法存入 std::function（std::function 需要可复制目标）。
-// 这里用注释形式演示：
-//   auto ptr = std::make_unique<int>(42);
-//   std::function<void()> bad = [p = std::move(ptr)]() { spdlog::info("{}", *p); }; // ❌ 编译失败
-// 解决办法：使用 std::move 进一个 shared_ptr，或用自定义模板包装，或直接存 lambda 到 auto /
-// 模板参数。
-
-// ============================================================================
-// 演示函数
-// ============================================================================
-
-void DemonstrateFunctionPointers() {
-    spdlog::info("\n=== 函数指针示例 ===");
-    double a = 10.0, b = 5.0;
-    spdlog::info("a = {}, b = {}", a, b);
-
-    MathOperation ops[]   = { Add, Subtract, Multiply, Divide };
-    const char *  names[] = { "Add", "Subtract", "Multiply", "Divide" };
-    for (size_t i = 0; i < 4; ++i) {
-        spdlog::info("{}: {}", names[i], ApplyOperation(a, b, ops[i]));
-    }
-}
-
-void DemonstrateStdFunction() {
-    spdlog::info("\n=== std::function 示例 ===");
-    Calculator calc(Add); // 初始使用 Add
-    spdlog::info("Add via std::function: {}", calc.Calculate(3.0, 4.0));
-
-    calc.SetOperation(Power);
-    spdlog::info("Power(2, 5): {}", calc.Calculate(2.0, 5.0));
-
-    calc.SetOperation([](double x, double y) { return x * y + y; });
-    spdlog::info("Custom lambda: {}", calc.Calculate(3.0, 6.0));
-
-    auto triple = CreateMultiplier(3.0); // 返回一个 lambda (double)->double
-    spdlog::info("Triple(7) = {}", triple(7.0));
-}
-
-void DemonstrateStdBind() {
-    spdlog::info("\n=== std::bind 示例 ===");
-    Processor proc;
-
-    // 参数重排：将 (data, priority) -> 绑定成 (priority_first, data_second)
-    auto reordered =
-        std::bind(&Processor::ProcessData, &proc, std::placeholders::_2, std::placeholders::_1);
-    reordered(1, "High Priority"); // 实际调用：data="High Priority", priority=1
-
-    // 部分绑定：固定优先级 = 5
-    auto fixed_priority = std::bind(&Processor::ProcessData, &proc, std::placeholders::_1, 5);
-    fixed_priority("Normal Data");
-
-    // 绑定回调
-    auto success_cb = std::bind(LogCallback, std::placeholders::_1);
-    auto error_cb   = std::bind(ErrorCallback, std::placeholders::_1);
-    proc.ProcessWithCallback("Task A", success_cb);
-    proc.ProcessWithCallback("Task B", error_cb);
-
-    // 绑定临时 lambda
-    auto custom_cb = std::bind([](const std::string & m) { spdlog::info("Custom: {}", m); },
-                               std::placeholders::_1);
-    proc.ProcessWithCallback("Task C", custom_cb);
-}
-
-void DemonstrateMemberFunctionPointerAndInvoke() {
-    spdlog::info("\n=== 成员函数指针 & std::invoke 示例 ===");
-    Accumulator acc(10);
-    void (Accumulator::*add_ptr)(int)        = &Accumulator::Add; // 成员函数指针
-    int (Accumulator::*scale_ptr)(int) const = &Accumulator::ScaleAndGet; // const 成员函数
-
-    // 调用方式一：obj.*ptr
-    (acc.*add_ptr)(5);
-    spdlog::info("After Add via pointer: {}", acc.Get());
-
-    // 调用方式二：std::invoke（统一调用方式）
-    std::invoke(add_ptr, acc, 7); // 临时加 7
-    spdlog::info("After std::invoke Add: {}", acc.Get());
-
-    int scaled = std::invoke(scale_ptr, acc, 3);
-    spdlog::info("ScaleAndGet(3): {}", scaled);
-}
-
-void DemonstrateRecursiveStdFunction() {
-    spdlog::info("\n=== 递归函数示例 ===");
-    int n = 6;
-    spdlog::info("FactorialClassic({}) = {}", n, FactorialClassic(n));
-    spdlog::info("FactorialWithStdFunction({}) = {}", n, FactorialWithStdFunction(n));
-    spdlog::info("FactorialTail({}) = {}", n, FactorialTail(n));
-}
-
-void DemonstrateFunctionChain() {
-    spdlog::info("\n=== 函数链式组合示例 ===");
-    FunctionChain chain;
-    chain.AddTransform(ToUpper);
-    chain.AddTransform(AddPrefix("PREFIX_"));
-    chain.AddTransform(AddSuffix("_SUFFIX"));
-    chain.AddTransform(
-        [](const std::string & s) { return s + "|LEN=" + std::to_string(s.size()); });
+    Pipeline<std::string> pipeline;
+    pipeline.Add(ToUpperCase)
+        .Add(AddPrefix("["))
+        .Add(AddSuffix("]"))
+        .Add([](const std::string & s) { return s + " (长度: " + std::to_string(s.size()) + ")"; });
 
     std::string input  = "hello world";
-    std::string output = chain.Apply(input);
-    spdlog::info("Input: {}", input);
-    spdlog::info("Output: {}", output);
-}
+    std::string output = pipeline.Execute(input);
 
-void DemonstrateMoveOnlyLimitation() {
-    spdlog::info("\n=== std::function Move-Only 限制说明 ===");
-    spdlog::info("通过注释展示：捕获 unique_ptr 的 lambda 不能放入 std::function，因为不可复制。");
+    spdlog::info("输入: '{}'", input);
+    spdlog::info("输出: '{}'", output);
 }
 
 // ============================================================================
-// 汇总演示入口
+// 6. 递归和 Y 组合子
 // ============================================================================
 
-void RunAllFunctionDemos() {
-    DemonstrateFunctionPointers();
-    DemonstrateStdFunction();
-    DemonstrateStdBind();
-    DemonstrateMemberFunctionPointerAndInvoke();
-    DemonstrateRecursiveStdFunction();
-    DemonstrateFunctionChain();
-    DemonstrateMoveOnlyLimitation();
+// 传统递归函数
+int Factorial(int n) {
+    return (n <= 1) ? 1 : n * Factorial(n - 1);
 }
 
-} // namespace basic
-} // namespace cpp_qa_lab
+// 使用 std::function 的递归 Lambda
+auto MakeRecursiveFibonacci() {
+    std::function<int(int)> fib = [&fib](int n) -> int {
+        if (n <= 1) {
+            return n;
+        }
+        return fib(n - 1) + fib(n - 2);
+    };
+    return fib;
+}
+
+// Y 组合子实现通用递归
+template <typename F> struct YCombinator {
+    F func;
+
+    template <typename... Args> auto operator()(Args &&... args) const {
+        return func(*this, std::forward<Args>(args)...);
+    }
+};
+
+template <typename F> YCombinator<std::decay_t<F>> MakeYCombinator(F && func) {
+    return { std::forward<F>(func) };
+}
+
+void DemoRecursion() {
+    spdlog::info("\n=== 6. 递归示例 ===");
+
+    constexpr int n = 7;
+
+    // 传统递归
+    spdlog::info("阶乘({}) = {}", n, Factorial(n));
+
+    // 递归 Lambda
+    auto fib = MakeRecursiveFibonacci();
+    spdlog::info("斐波那契({}) = {}", n, fib(n));
+
+    // Y 组合子
+    auto factorial_y =
+        MakeYCombinator([](auto self, int n) -> int { return (n <= 1) ? 1 : n * self(n - 1); });
+    spdlog::info("Y组合子阶乘({}) = {}", n, factorial_y(n));
+
+    // 另一个 Y 组合子示例
+    auto fibonacci_y = MakeYCombinator([](auto self, int n) -> int {
+        if (n <= 1) {
+            return n;
+        }
+        return self(n - 1) + self(n - 2);
+    });
+    spdlog::info("Y组合子斐波那契({}) = {}", n, fibonacci_y(n));
+}
+
+// ============================================================================
+// 主演示函数
+// ============================================================================
+
+void RunAllDemos() {
+    spdlog::info("╔════════════════════════════════════════════════════════╗");
+    spdlog::info("║          Modern C++ 函数与可调用对象示例              ║");
+    spdlog::info("╚════════════════════════════════════════════════════════╝");
+
+    DemoFunctionPointers();
+    DemoStdFunction();
+    DemoMemberFunctionPointers();
+    DemoLambdaCaptures();
+    DemoPipeline();
+    DemoRecursion();
+}
 
 int main() {
-    spdlog::info("C++ 函数指针 / std::function / std::bind / std::invoke 综合示例");
-    spdlog::info("================================================================");
-    cpp_qa_lab::basic::RunAllFunctionDemos();
-    spdlog::info("\n================================================================");
-    spdlog::info("所有函数相关示例演示完成！");
+    spdlog::set_pattern("[%^%l%$] %v");
+    RunAllDemos();
+    spdlog::info("\n✓ 所有演示已完成!");
     return 0;
 }

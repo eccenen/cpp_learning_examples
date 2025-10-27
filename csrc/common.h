@@ -20,6 +20,8 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <numeric>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <typeinfo>
@@ -39,6 +41,7 @@
 #include <memory>
 
 // C Standard Library (commonly used)
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
