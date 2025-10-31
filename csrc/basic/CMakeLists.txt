@@ -14,7 +14,7 @@ set_property(DIRECTORY PROPERTY RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${basic_outp
 if(BASIC_SRCS)
 	foreach(src IN LISTS BASIC_SRCS)
 		get_filename_component(src_name ${src} NAME_WE)
-		set(bin_name "basic_${src_name}")
+		set(bin_name "${src_name}")
 		add_executable(${bin_name} ${src})
 		target_include_directories(${bin_name} PRIVATE ${CMAKE_SOURCE_DIR}/csrc ${CMAKE_CURRENT_SOURCE_DIR})
 		# Link csrc common deps (includes fmt and other shared libraries)

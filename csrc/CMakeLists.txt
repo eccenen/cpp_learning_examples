@@ -30,4 +30,8 @@ if(BUILD_EXAMPLES)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party_examples/CMakeLists.txt")
         add_subdirectory(third_party_examples)
     endif()
+    # add memory_pool subdir for memory pool teaching examples
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/memory_pool/CMakeLists.txt")
+        add_subdirectory(memory_pool)
+    endif()
 endif()

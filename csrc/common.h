@@ -17,11 +17,13 @@
 
 // C++ Standard Library - Utilities
 #include <any>
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <ratio>
 #include <string>
 #include <type_traits>
 #include <typeinfo>
@@ -39,12 +41,15 @@
 
 //
 #include <memory>
+#include <new>
 
 // C Standard Library (commonly used)
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 // Hint to include-what-you-use / clangd include-cleaner that this header
 // is intentionally a central aggregator and should be kept when included.

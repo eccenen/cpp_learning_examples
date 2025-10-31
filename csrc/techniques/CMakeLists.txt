@@ -20,7 +20,7 @@ foreach(d ${CHILD_DIRS})
             if(SRCS)
                 # target name: techniques_<subdir>
                 string(REPLACE "/" "_" subdir_name ${d})
-                set(tgt_name "techniques_${subdir_name}")
+                set(tgt_name "${subdir_name}")
                 add_executable(${tgt_name} ${SRCS})
                 target_include_directories(${tgt_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/${d} ${CMAKE_SOURCE_DIR}/csrc)
                 target_compile_features(${tgt_name} PRIVATE cxx_std_17)
