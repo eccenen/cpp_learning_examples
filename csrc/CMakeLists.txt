@@ -31,9 +31,9 @@ if(BUILD_EXAMPLES)
         add_subdirectory(third_party_examples)
     endif()
     # add memory_pool subdir for memory pool teaching examples
-    # if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/memory_pool/CMakeLists.txt")
-    #     add_subdirectory(memory_pool)
-    # endif()
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/memory_pool/CMakeLists.txt")
+        add_subdirectory(memory_pool)
+    endif()
     # add concurrent subdir for concurrency/gemm examples
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/concurrent/CMakeLists.txt")
         add_subdirectory(concurrent)

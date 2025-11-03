@@ -73,8 +73,8 @@ class FixedBlockPool {
     }
 
     ~FixedBlockPool() {
-        if (stats_.current_usage > 0) {
-            spdlog::warn("[警告] 内存池销毁时还有 {} bytes未释放", stats_.current_usage);
+        if (stats_.current_usage.load() > 0) {
+            spdlog::warn("[警告] 内存池销毁时还有 {} bytes未释放", stats_.current_usage.load());
         }
 
         ::operator delete(memory_start_);
@@ -212,6 +212,9 @@ class FixedBlockPool {
             free_list_         = block;
         }
     }
+
+    // 兼容旧命名
+    void init_free_list() { initFreeList(); }
 };
 
 } // namespace memory_pool

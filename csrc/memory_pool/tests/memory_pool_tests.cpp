@@ -5,12 +5,14 @@
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
+#include <spdlog/spdlog.h>
 
 #include <list>
 
-#include "../advanced/pool_allocator.h"
-#include "../intermediate/fixed_block_pool.h"
-#include "../intermediate/stack_allocator.h"
+#include "../example/advance_pool_allocator.h"
+#include "../example/intermediate_fixed_block_pool.h"
+#include "../example/intermediate_stack_allocator.h"
+#include "common.h"
 
 using namespace memory_pool;
 

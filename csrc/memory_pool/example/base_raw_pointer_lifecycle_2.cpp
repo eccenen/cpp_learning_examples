@@ -13,13 +13,13 @@ void DemoBasicNewDelete() {
 
     // 单个对象分配
     int * p1 = new int(42);
-    MemoryVisualizer::VisualizeMemoryBlock(p1, sizeof(int), "单个 int");
+    Memoryvisualizer::visualizeMemoryBlock(p1, sizeof(int), "单个 int");
     spdlog::info("值: {}", *p1);
     delete p1;
 
     // 数组分配
     int * arr = new int[5]{ 1, 2, 3, 4, 5 };
-    MemoryVisualizer::VisualizeMemoryBlock(arr, sizeof(int) * 5, "int 数组");
+    Memoryvisualizer::visualizeMemoryBlock(arr, sizeof(int) * 5, "int 数组");
     spdlog::info("数组元素: [{}, {}, {}, {}, {}]", arr[0], arr[1], arr[2], arr[3], arr[4]);
     delete[] arr; // 注意：必须使用 delete[]
 
@@ -140,25 +140,25 @@ void DemoMemoryLeakDetection() {
 
     // 模拟分配
     int * p1 = new int(10);
-    stats.RecordAllocation(sizeof(int));
+    stats.recordAllocation(sizeof(int));
 
     int * p2 = new int(20);
-    stats.RecordAllocation(sizeof(int));
+    stats.recordAllocation(sizeof(int));
 
     int * p3 = new int(30);
-    stats.RecordAllocation(sizeof(int));
+    stats.recordAllocation(sizeof(int));
 
     // 只释放部分
     delete p1;
-    stats.RecordDeallocation(sizeof(int));
+    stats.recordDeallocation(sizeof(int));
 
     delete p2;
-    stats.RecordDeallocation(sizeof(int));
+    stats.recordDeallocation(sizeof(int));
 
     // p3 未释放，内存泄漏！
     spdlog::warn("⚠ p3 未释放，造成内存泄漏");
 
-    stats.Print();
+    stats.show();
 
     // 清理
     delete p3;

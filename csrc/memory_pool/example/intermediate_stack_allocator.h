@@ -115,10 +115,16 @@ class StackAllocator {
         stats_.recordDeallocation(freed);
     }
 
+    // 兼容旧命名
+    void free_to_marker(Marker marker) { freeToMarker(marker); }
+
     /**
      * 获取当前标记（用于后续恢复）
      */
     Marker getMarker() const { return Marker{ offset_ }; }
+
+    // 兼容旧命名
+    Marker get_marker() const { return getMarker(); }
 
     /**
      * 清空分配器（释放所有）
@@ -139,6 +145,9 @@ class StackAllocator {
      */
     void pushMarker() { markers_.push_back(getMarker()); }
 
+    // 兼容旧命名
+    void push_marker() { pushMarker(); }
+
     /**
      * 弹出标记（恢复到保存的状态）
      */
@@ -152,6 +161,9 @@ class StackAllocator {
         markers_.pop_back();
         freeToMarker(marker);
     }
+
+    // 兼容旧命名
+    void popMarker() { pop_marker(); }
 
     /**
      * 获取当前使用量
@@ -181,6 +193,9 @@ class StackAllocator {
 
         stats_.show();
     }
+
+    // 兼容旧命名
+    void print_status() const { printStatus(); }
 
     /**
      * 可视化内存使用

@@ -62,14 +62,14 @@ void DemoAlignedAllocation() {
     void * ptr1 = std::aligned_alloc(alignment, size);
     spdlog::info("aligned_alloc(64, 256):");
     spdlog::info("  - 地址: {}", ptr1);
-    spdlog::info("  - 对齐检查: {}", IsAligned(ptr1, alignment) ? "✓" : "✗");
+    spdlog::info("  - 对齐检查: {}", isAligned(ptr1, alignment) ? "✓" : "✗");
     std::free(ptr1);
 
     // C11 aligned_alloc
     void * ptr2 = std::aligned_alloc(32, 128);
     spdlog::info("\naligned_alloc(32, 128):");
     spdlog::info("  - 地址: {}", ptr2);
-    spdlog::info("  - 对齐检查: {}", IsAligned(ptr2, 32) ? "✓" : "✗");
+    spdlog::info("  - 对齐检查: {}", isAligned(ptr2, 32) ? "✓" : "✗");
     std::free(ptr2);
 }
 
@@ -92,7 +92,7 @@ void DemoAlignmentPerformance() {
                 sum += unaligned_arr[i];
             }
         }
-        spdlog::info("未对齐访问: {:.2f} ms (sum={})", timer.ElapsedMilliseconds(), sum);
+        spdlog::info("未对齐访问: {:.2f} ms (sum={})", timer.elapsedMs(), sum);
     }
 
     // 对齐的数组
@@ -107,7 +107,7 @@ void DemoAlignmentPerformance() {
                 sum += aligned_arr[i];
             }
         }
-        spdlog::info("对齐访问:   {:.2f} ms (sum={})", timer.ElapsedMilliseconds(), sum);
+        spdlog::info("对齐访问:   {:.2f} ms (sum={})", timer.elapsedUs(), sum);
     }
 
     delete[] unaligned_base;
@@ -119,32 +119,32 @@ void DemoCustomAlignedAllocator() {
 
     class AlignedAllocator {
       public:
-        static void * Allocate(size_t size, size_t alignment) {
-            size       = AlignUp(size, alignment);
+        static void * allocate(size_t size, size_t alignment) {
+            size       = alignUp(size, alignment);
             void * ptr = std::aligned_alloc(alignment, size);
             spdlog::info("分配 {} bytes (对齐 {}) @ {}", size, alignment, ptr);
             return ptr;
         }
 
-        static void Deallocate(void * ptr) {
+        static void deallocate(void * ptr) {
             spdlog::info("释放 @ {}", ptr);
             std::free(ptr);
         }
     };
 
     // 分配不同对齐要求的内存
-    void * ptr16 = AlignedAllocator::Allocate(100, 16);
-    void * ptr32 = AlignedAllocator::Allocate(100, 32);
-    void * ptr64 = AlignedAllocator::Allocate(100, 64);
+    void * ptr16 = AlignedAllocator::allocate(100, 16);
+    void * ptr32 = AlignedAllocator::allocate(100, 32);
+    void * ptr64 = AlignedAllocator::allocate(100, 64);
 
     spdlog::info("\n对齐检查:");
-    spdlog::info("  16-byte: {}", IsAligned(ptr16, 16) ? "✓" : "✗");
-    spdlog::info("  32-byte: {}", IsAligned(ptr32, 32) ? "✓" : "✗");
-    spdlog::info("  64-byte: {}", IsAligned(ptr64, 64) ? "✓" : "✗");
+    spdlog::info("  16-byte: {}", isAligned(ptr16, 16) ? "✓" : "✗");
+    spdlog::info("  32-byte: {}", isAligned(ptr32, 32) ? "✓" : "✗");
+    spdlog::info("  64-byte: {}", isAligned(ptr64, 64) ? "✓" : "✗");
 
-    AlignedAllocator::Deallocate(ptr16);
-    AlignedAllocator::Deallocate(ptr32);
-    AlignedAllocator::Deallocate(ptr64);
+    AlignedAllocator::deallocate(ptr16);
+    AlignedAllocator::deallocate(ptr32);
+    AlignedAllocator::deallocate(ptr64);
 }
 
 void DemoSIMDAlignment() {
@@ -162,11 +162,11 @@ void DemoSIMDAlignment() {
 
     spdlog::info("SIMD 数据对齐:");
     spdlog::info("  SSE   (16-byte): {} - {}", static_cast<void *>(sse_data),
-                 IsAligned(sse_data, 16) ? "✓" : "✗");
+                 isAligned(sse_data, 16) ? "✓" : "✗");
     spdlog::info("  AVX   (32-byte): {} - {}", static_cast<void *>(avx_data),
-                 IsAligned(avx_data, 32) ? "✓" : "✗");
+                 isAligned(avx_data, 32) ? "✓" : "✗");
     spdlog::info("  AVX512(64-byte): {} - {}", static_cast<void *>(avx512_data),
-                 IsAligned(avx512_data, 64) ? "✓" : "✗");
+                 isAligned(avx512_data, 64) ? "✓" : "✗");
 }
 
 int main() {

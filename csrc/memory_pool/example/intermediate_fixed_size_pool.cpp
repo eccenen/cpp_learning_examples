@@ -47,7 +47,7 @@ FixedSizePool::~FixedSizePool() {
     spdlog::info("FixedSizePool 销毁");
 }
 
-void * FixedSizePool::Allocate() {
+void * FixedSizePool::allocate() {
     if (!free_list_) {
         spdlog::error("❌ 内存池已耗尽！");
         return nullptr;
@@ -63,7 +63,7 @@ void * FixedSizePool::Allocate() {
     return static_cast<void *>(node);
 }
 
-void FixedSizePool::Deallocate(void * ptr) {
+void FixedSizePool::deallocate(void * ptr) {
     if (!ptr) {
         return;
     }
@@ -87,7 +87,7 @@ void FixedSizePool::Deallocate(void * ptr) {
     stats_.recordDeallocation(block_size_);
 }
 
-void FixedSizePool::PrintStats() const {
+void FixedSizePool::printStats() const {
     spdlog::info("\n=== FixedSizePool 统计信息 ===");
     spdlog::info("块大小: {} bytes", block_size_);
     spdlog::info("总块数: {}", block_count_);
@@ -97,9 +97,9 @@ void FixedSizePool::PrintStats() const {
     stats_.show();
 }
 
-void FixedSizePool::Visualize() const {
-    MemoryVisualizer::visualizePoolLayout(memory_pool_, block_size_, block_count_);
-    MemoryVisualizer::visualizeFreeList(free_list_, "FixedSizePool");
+void FixedSizePool::visualize() const {
+    Memoryvisualizer::visualizePoolLayout(memory_pool_, block_size_, block_count_);
+    Memoryvisualizer::visualizeFreeList(free_list_, "FixedSizePool");
 }
 
 } // namespace memory_pool

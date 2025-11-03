@@ -17,7 +17,7 @@
 #include <limits>
 #include <memory>
 
-#include "/intermediate_fixed_block_pool.h"
+#include "intermediate_fixed_block_pool.h"
 
 namespace memory_pool {
 

@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "../common/memory_pool_common.h"
-#include "fixed_block_pool.h"
+#include "intermediate_fixed_block_pool.h"
 
 using namespace memory_pool;
 

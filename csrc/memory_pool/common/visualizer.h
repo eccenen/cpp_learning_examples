@@ -6,7 +6,7 @@
 
 namespace memory_pool {
 
-class MemoryVisualizer {
+class Memoryvisualizer {
   public:
     // 可视化内存块
     static void visualizeMemoryBlock(void * ptr, size_t size, const std::string & label) {

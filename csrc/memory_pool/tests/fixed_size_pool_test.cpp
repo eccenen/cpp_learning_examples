@@ -1,6 +1,6 @@
 // csrc/memory_pool/intermediate/04_fixed_size_pool_demo.cpp
 #include "../common/memory_pool_common.h"
-#include "../intermediate/fixed_size_pool.h"
+#include "../example/intermediate_fixed_size_pool.h"
 
 using namespace memory_pool;
 
@@ -24,34 +24,34 @@ void DemoBasicUsage() {
     constexpr size_t pool_size = 10;
     FixedSizePool    pool(sizeof(TestObject), pool_size);
 
-    pool.Visualize();
+    pool.visualize();
 
     // 分配几个对象
     spdlog::info("\n分配 3 个对象：");
-    void * p1 = pool.Allocate();
-    void * p2 = pool.Allocate();
-    void * p3 = pool.Allocate();
+    void * p1 = pool.allocate();
+    void * p2 = pool.allocate();
+    void * p3 = pool.allocate();
 
     // 使用 placement new 构造对象
     TestObject * obj1 = new (p1) TestObject(1);
     TestObject * obj2 = new (p2) TestObject(2);
     TestObject * obj3 = new (p3) TestObject(3);
 
-    pool.PrintStats();
+    pool.printStats();
 
     // 释放
     spdlog::info("\n释放对象：");
     obj1->~TestObject(); // 显式调用析构函数
-    pool.Deallocate(p1);
+    pool.deallocate(p1);
 
     obj2->~TestObject();
-    pool.Deallocate(p2);
+    pool.deallocate(p2);
 
-    pool.PrintStats();
+    pool.printStats();
 
     // 清理
     obj3->~TestObject();
-    pool.Deallocate(p3);
+    pool.deallocate(p3);
 }
 
 void DemoPoolExhaustion() {
@@ -64,7 +64,7 @@ void DemoPoolExhaustion() {
 
     // 尝试分配超过池大小的块
     for (size_t i = 0; i < small_pool_size + 2; ++i) {
-        void * ptr = pool.Allocate();
+        void * ptr = pool.allocate();
         if (ptr) {
             spdlog::info("✓ 分配成功 #{}: {}", i, ptr);
             allocated.push_back(ptr);
@@ -73,11 +73,11 @@ void DemoPoolExhaustion() {
         }
     }
 
-    pool.PrintStats();
+    pool.printStats();
 
     // 释放
     for (void * ptr : allocated) {
-        pool.Deallocate(ptr);
+        pool.deallocate(ptr);
     }
 }
 
@@ -94,7 +94,7 @@ void DemoPerformanceComparison() {
             void * ptr = ::operator new(object_size);
             ::operator delete(ptr);
         }
-        double elapsed = timer.ElapsedMilliseconds();
+        double elapsed = timer.elapsedMs();
         spdlog::info("new/delete: {:.3f} ms ({:.0f} ops/ms)", elapsed, iterations / elapsed);
     }
 
@@ -104,11 +104,11 @@ void DemoPerformanceComparison() {
         Timer         timer;
 
         for (size_t i = 0; i < iterations; ++i) {
-            void * ptr = pool.Allocate();
-            pool.Deallocate(ptr);
+            void * ptr = pool.allocate();
+            pool.deallocate(ptr);
         }
 
-        double elapsed = timer.ElapsedMilliseconds();
+        double elapsed = timer.elapsedMs();
         spdlog::info("内存池:     {:.3f} ms ({:.0f} ops/ms)", elapsed, iterations / elapsed);
     }
 }
@@ -121,26 +121,26 @@ void DemoMemoryFragmentation() {
     // 分配所有块
     std::vector<void *> ptrs;
     for (int i = 0; i < 10; ++i) {
-        ptrs.push_back(pool.Allocate());
+        ptrs.push_back(pool.allocate());
     }
 
     spdlog::info("所有块已分配");
-    pool.PrintStats();
+    pool.printStats();
 
     // 释放偶数索引的块
     spdlog::info("\n释放偶数索引块：");
     for (size_t i = 0; i < ptrs.size(); i += 2) {
-        pool.Deallocate(ptrs[i]);
+        pool.deallocate(ptrs[i]);
         ptrs[i] = nullptr;
     }
 
-    pool.PrintStats();
-    pool.Visualize();
+    pool.printStats();
+    pool.visualize();
 
     // 清理
     for (void * ptr : ptrs) {
         if (ptr) {
-            pool.Deallocate(ptr);
+            pool.deallocate(ptr);
         }
     }
 }

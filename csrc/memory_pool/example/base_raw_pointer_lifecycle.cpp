@@ -9,12 +9,14 @@
 
 #include <spdlog/spdlog.h>
 
-#include "../common/visualizer.h"
+#include <iostream>
+
 #include "common.h"
+#include "memory_pool/common/visualizer.h"
 
 using namespace memory_pool;
 
-namespace base {
+namespace beginner {
 
 // ============================================================================
 // 1. 基础：new/delete 的工作原理
@@ -25,13 +27,13 @@ void DemoBasicNewDelete() {
 
     // 单个对象分配
     int * p1 = new int(42);
-    MemoryVisualizer::VisualizeMemoryBlock(p1, sizeof(int), "单个 int");
+    Memoryvisualizer::visualizeMemoryBlock(p1, sizeof(int), "单个 int");
     spdlog::info("值: {}", *p1);
     delete p1;
 
     // 数组分配
     int * arr = new int[5]{ 1, 2, 3, 4, 5 };
-    MemoryVisualizer::VisualizeMemoryBlock(arr, sizeof(int) * 5, "int 数组");
+    Memoryvisualizer::visualizeMemoryBlock(arr, sizeof(int) * 5, "int 数组");
     spdlog::info("数组元素: [{}, {}, {}, {}, {}]", arr[0], arr[1], arr[2], arr[3], arr[4]);
     delete[] arr; // 注意：必须使用 delete[]
 
@@ -209,24 +211,19 @@ void alignment_and_padding() {
     operator delete(raw);
 }
 
-} // namespace base
+} // namespace beginner
 
 void run_beginner_examples() {
-    spdlog::info("\n╔════════════════════════════════════════════╗\n");
-    spdlog::info("║  初级：基础内存管理                        ║\n");
-    spdlog::info("╚════════════════════════════════════════════╝\n");
+    spdlog::info("▶ 执行所有示例");
 
-    beginner::correct_raw_pointer_usage();
+    beginner::DemoBasicNewDelete();
     beginner::memory_leak_patterns();
     beginner::dangling_pointer_problems();
     beginner::raii_principle();
     beginner::alignment_and_padding();
 }
 
-#ifndef DOCTEST_CONFIG_DISABLE
-// 主函数
 int main() {
     run_beginner_examples();
     return 0;
 }
-#endif

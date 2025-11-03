@@ -32,6 +32,11 @@ struct MemoryStats {
         deallocation_count++;
     }
 
+    // 兼容旧命名
+    void record_allocation(size_t size) { recordAllocation(size); }
+
+    void record_deallocation(size_t size) { recordDeallocation(size); }
+
     void reset() {
         total_allocated    = 0;
         total_freed        = 0;
@@ -51,6 +56,9 @@ struct MemoryStats {
     }
 };
 
+// 兼容别名：老代码中可能使用 PoolStats 命名
+using PoolStats = MemoryStats;
+
 // 性能计时器
 class Timer {
   public:
@@ -67,6 +75,13 @@ class Timer {
     }
 
     void reset() { start_ = std::chrono::high_resolution_clock::now(); }
+
+    // 兼容旧命名
+    double elapsed_ms() const { return elapsedMs(); }
+
+    double elapsed_us() const { return elapsedUs(); }
+
+    void reset_timer() { reset(); }
 
   private:
     std::chrono::high_resolution_clock::time_point start_;
@@ -115,6 +130,15 @@ inline bool isAligned(void * ptr, size_t alignment) {
 // 检查是否是2的幂
 inline bool isPowerOfTwo(size_t x) {
     return x && !(x & (x - 1));
+}
+
+// 兼容老命名（snake_case）
+inline size_t align_up(size_t size, size_t alignment) {
+    return alignUp(size, alignment);
+}
+
+inline bool is_power_of_two(size_t x) {
+    return isPowerOfTwo(x);
 }
 
 } // namespace memory_pool

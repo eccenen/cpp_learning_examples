@@ -16,8 +16,8 @@
 #include <vector>
 
 #include "../common/memory_pool_common.h"
-#include "../intermediate/fixed_block_pool.h"
-#include "../intermediate/stack_allocator.h"
+#include "../example/intermediate_fixed_block_pool.h"
+#include "../example/intermediate_stack_allocator.h"
 
 using namespace memory_pool;
 

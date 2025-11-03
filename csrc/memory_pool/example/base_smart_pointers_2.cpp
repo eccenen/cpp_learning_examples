@@ -185,7 +185,7 @@ void DemoPerformanceComparison() {
             int * ptr = new int(42);
             delete ptr;
         }
-        spdlog::info("原始指针:  {:.2f} ms", timer.ElapsedMilliseconds());
+        spdlog::info("原始指针:  {:.2f} ms", timer.elapsedMs());
     }
 
     // unique_ptr
@@ -194,7 +194,7 @@ void DemoPerformanceComparison() {
         for (size_t i = 0; i < iterations; ++i) {
             auto ptr = std::make_unique<int>(42);
         }
-        spdlog::info("unique_ptr: {:.2f} ms", timer.ElapsedMilliseconds());
+        spdlog::info("unique_ptr: {:.2f} ms", timer.elapsedMs());
     }
 
     // shared_ptr
@@ -203,7 +203,7 @@ void DemoPerformanceComparison() {
         for (size_t i = 0; i < iterations; ++i) {
             auto ptr = std::make_shared<int>(42);
         }
-        spdlog::info("shared_ptr: {:.2f} ms", timer.ElapsedMilliseconds());
+        spdlog::info("shared_ptr: {:.2f} ms", timer.elapsedMs());
     }
 }
 

@@ -23,10 +23,10 @@ class FixedSizePool {
     FixedSizePool & operator=(const FixedSizePool &) = delete;
 
     // 分配一个块
-    void * Allocate();
+    void * allocate();
 
     // 释放一个块
-    void Deallocate(void * ptr);
+    void deallocate(void * ptr);
 
     // 查询统计信息
     size_t GetBlockSize() const { return block_size_; }
@@ -38,10 +38,10 @@ class FixedSizePool {
     size_t GetFreeCount() const { return block_count_ - used_count_; }
 
     // 打印统计信息
-    void PrintStats() const;
+    void printStats() const;
 
     // 可视化内存布局
-    void Visualize() const;
+    void visualize() const;
 
   private:
     // 空闲列表节点

@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "pool_allocator.h"
+#include "advance_pool_allocator.h"
 
 using namespace memory_pool;
 
@@ -79,6 +79,8 @@ void example_list_integration() {
 }
 
 // 示例3：自定义类型
+#include <fmt/format.h>
+
 struct Point {
     double x, y, z;
 
@@ -86,6 +88,16 @@ struct Point {
 
     friend std::ostream & operator<<(std::ostream & os, const Point & p) {
         return os << "(" << p.x << ", " << p.y << ", " << p.z << ")";
+    }
+};
+
+template <> struct fmt::formatter<Point> {
+    constexpr auto parse(format_parse_context & ctx) -> format_parse_context::iterator {
+        return ctx.begin();
+    }
+
+    auto format(const Point & p, format_context & ctx) const -> format_context::iterator {
+        return format_to(ctx.out(), "({}, {}, {})", p.x, p.y, p.z);
     }
 };
 
