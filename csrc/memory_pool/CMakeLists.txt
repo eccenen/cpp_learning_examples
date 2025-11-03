@@ -43,6 +43,15 @@ target_include_directories(memory_pool_core PUBLIC ${COMMON_INCLUDE_DIRS})
 target_link_libraries(memory_pool_core PUBLIC ${COMMON_LINK_LIBS})
 # 导出库名以便后续可执行文件链接
 list(APPEND MEMORY_POOL_LIBS memory_pool_core)
+if(NOT DEFINED MEMORY_POOL_RUNTIME_DIR)
+    set(MEMORY_POOL_RUNTIME_DIR "${CMAKE_BINARY_DIR}/bin/memory_pool")
+endif()
+
+# 设置 core 库输出到同一目录下（静态库放 archive）
+set_target_properties(memory_pool_core PROPERTIES
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+)
 
 # ============================================================================
 # 辅助函数：为单个源文件创建可执行文件
@@ -62,6 +71,12 @@ function(add_memory_pool_executable source_file)
     if(TARGET memory_pool_core)
         target_link_libraries(${exec_name} PRIVATE memory_pool_core)
     endif()
+    # 将可执行文件统一输出到 build/bin/memory_pool
+    set_target_properties(${exec_name} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${MEMORY_POOL_RUNTIME_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${MEMORY_POOL_RUNTIME_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${MEMORY_POOL_RUNTIME_DIR}"
+    )
     
     # 添加到可执行文件列表
     list(APPEND MEMORY_POOL_EXECUTABLES ${exec_name})
