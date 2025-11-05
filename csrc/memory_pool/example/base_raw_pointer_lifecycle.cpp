@@ -47,6 +47,7 @@ void memory_leak_patterns() {
     // 模式1：忘记delete
     {
         int * leak1 = new int(100);
+        (void) (leak1);
         spdlog::warn("⚠️ 泄漏模式1：忘记delete，分配了但未释放");
         // 缺少 delete leak1;
     }

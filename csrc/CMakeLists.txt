@@ -38,4 +38,8 @@ if(BUILD_EXAMPLES)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/concurrent/CMakeLists.txt")
         add_subdirectory(concurrent)
     endif()
+    # add linux_program subdir for Linux system programming examples
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/linux_program/CMakeLists.txt")
+        add_subdirectory(linux_program)
+    endif()
 endif()
