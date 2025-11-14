@@ -42,4 +42,8 @@ if(BUILD_EXAMPLES)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/linux_program/CMakeLists.txt")
         add_subdirectory(linux_program)
     endif()
+    # add algo subdir for algorithm and data structure examples
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/algo/CMakeLists.txt")
+        add_subdirectory(algo)
+    endif()
 endif()

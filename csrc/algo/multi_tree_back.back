@@ -1,0 +1,1833 @@
+/**
+ * 通用多叉树结构
+ *
+ * 用于构建和管理树形数据结构，支持任意类型的节点数据。
+ * 特别适用于ONNX模型子图等场景。
+ *
+ * 功能特性：
+ * 1. 模板化的树形结构，支持任意数据类型
+ * 2. 灵活的节点管理和查找功能
+ * 3. 多种遍历方式（层序、前序）
+ * 4. 安全的资源管理（RAII）
+ * 5. 便捷的节点添加接口
+ */
+
+#if 0
+#    ifndef MULTI_TREE_HPP_
+#        define MULTI_TREE_HPP_
+
+#        include <memory>
+#        include <queue>
+#        include <stdexcept>
+#        include <string>
+#        include <unordered_set>
+#        include <utility>
+#        include <vector>
+
+namespace algo {
+
+/**
+ * 树节点数据接口
+ * 节点数据类型需要实现此接口以支持查找功能
+ */
+template <typename T> class TreeNodeData {
+  public:
+    virtual ~TreeNodeData()                                               = default;
+    virtual const std::string &                     getNodeName() const   = 0;
+    virtual const std::unordered_set<std::string> & getInputNames() const = 0;
+};
+
+/**
+ * 通用树节点结构
+ * @tparam T 节点存储的数据类型
+ */
+template <typename T> class TreeNode {
+  public:
+    using node_ptr_t = std::shared_ptr<TreeNode<T>>;
+    using data_ptr_t = std::shared_ptr<T>;
+
+    // ========== 构造函数 ==========
+
+    TreeNode()  = default;
+    ~TreeNode() = default;
+
+    /**
+     * 仅节点名称的构造函数
+     */
+    explicit TreeNode(const std::string & node_name) : node_name_(node_name), data_(nullptr) {}
+
+    /**
+     * 节点名称 + 输入名称集合
+     */
+    TreeNode(const std::string & node_name, const std::unordered_set<std::string> & inputs_name) :
+        node_name_(node_name),
+        inputs_name_(inputs_name),
+        data_(nullptr) {}
+
+    /**
+     * 完整构造函数
+     */
+    TreeNode(const std::string & node_name, const std::unordered_set<std::string> & inputs_name,
+             data_ptr_t data) :
+        node_name_(node_name),
+        inputs_name_(inputs_name),
+        data_(std::move(data)) {}
+
+    /**
+     * 仅数据的构造函数
+     */
+    explicit TreeNode(data_ptr_t data) : data_(std::move(data)) {}
+
+    // 拷贝和移动语义
+    TreeNode(const TreeNode &)                 = default;
+    TreeNode & operator=(const TreeNode &)     = default;
+    TreeNode(TreeNode &&) noexcept             = default;
+    TreeNode & operator=(TreeNode &&) noexcept = default;
+
+    // ========== Setters ==========
+
+    void addInputName(const std::string & name) { inputs_name_.insert(name); }
+
+    void setNodeName(const std::string & node_name) { node_name_ = node_name; }
+
+    void setInputNames(const std::unordered_set<std::string> & inputs_name) {
+        inputs_name_ = inputs_name;
+    }
+
+    void setData(data_ptr_t data) { data_ = std::move(data); }
+
+    /**
+     * 添加子节点（拷贝版本）
+     */
+    node_ptr_t addChild(const TreeNode & child) {
+        auto child_ptr = std::make_shared<TreeNode>(child);
+        children_.push_back(child_ptr);
+        return child_ptr;
+    }
+
+    /**
+     * 添加子节点（移动版本）
+     */
+    node_ptr_t addChild(TreeNode && child) {
+        auto child_ptr = std::make_shared<TreeNode>(std::move(child));
+        children_.push_back(child_ptr);
+        return child_ptr;
+    }
+
+    /**
+     * 添加子节点（智能指针版本）
+     */
+    void addChild(node_ptr_t child_ptr) {
+        if (child_ptr == nullptr) {
+            throw std::invalid_argument("Child node pointer cannot be null");
+        }
+        children_.push_back(std::move(child_ptr));
+    }
+
+    /**
+     * 创建并添加新子节点
+     */
+    template <typename... Args> node_ptr_t createChild(Args &&... args) {
+        auto child_ptr = std::make_shared<TreeNode>(std::forward<Args>(args)...);
+        children_.push_back(child_ptr);
+        return child_ptr;
+    }
+
+    // ========== Getters ==========
+
+    const std::string & getNodeName() const { return node_name_; }
+
+    const std::unordered_set<std::string> & getInputNames() const { return inputs_name_; }
+
+    data_ptr_t getData() { return data_; }
+
+    const data_ptr_t getData() const { return data_; }
+
+    const std::vector<node_ptr_t> & getChildren() const { return children_; }
+
+    std::vector<node_ptr_t> & getChildren() { return children_; }
+
+    size_t getChildrenSize() const { return children_.size(); }
+
+    bool isLeaf() const { return children_.empty(); }
+
+    bool hasData() const { return data_ != nullptr; }
+
+  private:
+    std::string                     node_name_;
+    std::unordered_set<std::string> inputs_name_;
+    data_ptr_t                      data_{ nullptr };
+    std::vector<node_ptr_t>         children_;
+};
+
+/**
+ * 通用多叉树
+ * @tparam T 节点存储的数据类型
+ */
+template <typename T> class MultiTree {
+  public:
+    using node_t     = TreeNode<T>;
+    using node_ptr_t = std::shared_ptr<node_t>;
+    using data_ptr_t = std::shared_ptr<T>;
+
+    // ========== 构造函数 ==========
+
+    MultiTree()  = default;
+    ~MultiTree() = default;
+
+    /**
+     * 使用树名称构造
+     */
+    explicit MultiTree(const std::string & tree_name) : tree_name_(tree_name) {}
+
+    // 拷贝和移动语义
+    MultiTree(const MultiTree &)                 = default;
+    MultiTree & operator=(const MultiTree &)     = default;
+    MultiTree(MultiTree &&) noexcept             = default;
+    MultiTree & operator=(MultiTree &&) noexcept = default;
+
+    // ========== 根节点操作 ==========
+
+    void setRoot(const node_t & node) { root_ = std::make_shared<node_t>(node); }
+
+    void setRoot(node_t && node) { root_ = std::make_shared<node_t>(std::move(node)); }
+
+    void setRoot(node_ptr_t node_ptr) { root_ = std::move(node_ptr); }
+
+    /**
+     * 创建根节点
+     */
+    template <typename... Args> node_ptr_t createRoot(Args &&... args) {
+        root_ = std::make_shared<node_t>(std::forward<Args>(args)...);
+        return root_;
+    }
+
+    node_ptr_t getRoot() { return root_; }
+
+    const node_ptr_t getRoot() const { return root_; }
+
+    // ========== 树属性 ==========
+
+    bool isEmpty() const { return root_ == nullptr; }
+
+    size_t getNodeSize() const {
+        if (isEmpty()) {
+            return 0;
+        }
+        size_t count = 0;
+        levelOrderTraversal([&count](const node_ptr_t &) { ++count; });
+        return count;
+    }
+
+    void clear() { root_.reset(); }
+
+    const std::string & getTreeName() const { return tree_name_; }
+
+    void setTreeName(const std::string & name) { tree_name_ = name; }
+
+    // ========== 节点查找 ==========
+
+    /**
+     * 根据节点名称查找节点
+     */
+    node_ptr_t findNodeByName(const std::string & node_name) const {
+        if (isEmpty()) {
+            return nullptr;
+        }
+
+        node_ptr_t result = nullptr;
+        levelOrderTraversal([&result, &node_name](const node_ptr_t & cur_node) {
+            if (!result && cur_node && cur_node->getNodeName() == node_name) {
+                result = cur_node;
+            }
+        });
+        return result;
+    }
+
+    /**
+     * 根据单个输入名称查找节点
+     */
+    node_ptr_t findNodeByInputName(const std::string & input_name) const {
+        if (isEmpty()) {
+            return nullptr;
+        }
+
+        node_ptr_t result = nullptr;
+        levelOrderTraversal([&result, &input_name](const node_ptr_t & cur_node) {
+            if (!result && cur_node) {
+                const auto & inputs_name = cur_node->getInputNames();
+                if (inputs_name.find(input_name) != inputs_name.end()) {
+                    result = cur_node;
+                }
+            }
+        });
+        return result;
+    }
+
+    /**
+     * 根据输入名称集合查找节点（要求所有输入都匹配）
+     */
+    node_ptr_t findNodeByInputNames(const std::unordered_set<std::string> & input_names) const {
+        if (isEmpty()) {
+            return nullptr;
+        }
+
+        node_ptr_t result = nullptr;
+        levelOrderTraversal([&result, &input_names](const node_ptr_t & cur_node) {
+            if (!result && cur_node) {
+                const auto & node_input_names = cur_node->getInputNames();
+                bool         all_found        = true;
+                for (const auto & name : input_names) {
+                    if (node_input_names.find(name) == node_input_names.end()) {
+                        all_found = false;
+                        break;
+                    }
+                }
+                if (all_found && !input_names.empty()) {
+                    result = cur_node;
+                }
+            }
+        });
+        return result;
+    }
+
+    // ========== 便捷的节点添加接口 ==========
+
+    /**
+     * 向指定名称的节点添加子节点
+     * @return 新添加的子节点指针，如果父节点未找到则返回nullptr
+     */
+    template <typename... Args>
+    node_ptr_t addChildTo(const std::string & parent_name, Args &&... args) {
+        auto parent = findNodeByName(parent_name);
+        if (!parent) {
+            return nullptr;
+        }
+        return parent->createChild(std::forward<Args>(args)...);
+    }
+
+    /**
+     * 向指定节点添加子节点
+     * @return 新添加的子节点指针
+     */
+    template <typename... Args> node_ptr_t addChildTo(node_ptr_t parent, Args &&... args) {
+        if (!parent) {
+            throw std::invalid_argument("Parent node cannot be null");
+        }
+        return parent->createChild(std::forward<Args>(args)...);
+    }
+
+    // ========== 遍历操作 ==========
+
+    /**
+     * 层序遍历
+     */
+    template <typename Op> void levelOrderTraversal(Op && op) const {
+        if (isEmpty()) {
+            return;
+        }
+
+        std::queue<node_ptr_t> node_queue;
+        node_queue.push(root_);
+        while (!node_queue.empty()) {
+            auto cur_node = node_queue.front();
+            node_queue.pop();
+            if (cur_node != nullptr) {
+                op(cur_node);
+                for (const auto & child : cur_node->getChildren()) {
+                    if (child) {
+                        node_queue.push(child);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 前序遍历
+     */
+    template <typename Op> void preOrderTraversal(Op && op) const {
+        preOrderTraversalHelper(root_, std::forward<Op>(op));
+    }
+
+    /**
+     * 后序遍历
+     */
+    template <typename Op> void postOrderTraversal(Op && op) const {
+        postOrderTraversalHelper(root_, std::forward<Op>(op));
+    }
+
+  private:
+    std::string tree_name_;
+    node_ptr_t  root_{ nullptr };
+
+    template <typename Op> void preOrderTraversalHelper(const node_ptr_t & node, Op && op) const {
+        if (!node) {
+            return;
+        }
+        op(node);
+        for (const auto & child : node->getChildren()) {
+            preOrderTraversalHelper(child, std::forward<Op>(op));
+        }
+    }
+
+    template <typename Op> void postOrderTraversalHelper(const node_ptr_t & node, Op && op) const {
+        if (!node) {
+            return;
+        }
+        for (const auto & child : node->getChildren()) {
+            postOrderTraversalHelper(child, std::forward<Op>(op));
+        }
+        op(node);
+    }
+};
+
+// ========== ONNX特化示例 ==========
+
+#        ifdef ONNX_INCLUDED
+#            include <onnx/onnx_pb.h>
+
+namespace onnx_utils {
+
+/**
+ * ONNX节点数据包装类
+ */
+class OnnxNodeData {
+  public:
+    OnnxNodeData() = default;
+
+    explicit OnnxNodeData(onnx::NodeProto * node) : node_(node) {}
+
+    onnx::NodeProto * getNode() const { return node_; }
+
+    void setNode(onnx::NodeProto * node) { node_ = node; }
+
+    bool isValid() const { return node_ != nullptr; }
+
+  private:
+    onnx::NodeProto * node_{ nullptr };
+};
+
+// ONNX专用的多叉树类型别名
+using OnnxTree     = algo::MultiTree<OnnxNodeData>;
+using OnnxTreeNode = algo::TreeNode<OnnxNodeData>;
+
+} // namespace onnx_utils
+#        endif
+
+} // namespace algo
+
+#    endif // MULTI_TREE_HPP_
+
+#endif
+
+///
+///
+///
+///
+/**
+ * 通用多叉树结构
+ *
+ * 用于构建和管理树形数据结构，支持任意类型的节点数据。
+ * 特别适用于ONNX模型子图等场景。
+ *
+ * 功能特性：
+ * 1. 模板化的树形结构，支持任意数据类型
+ * 2. 使用unique_ptr实现高效的内存管理
+ * 3. 灵活的节点管理和查找功能
+ * 4. 多种遍历方式（层序、前序、后序）
+ * 5. 便捷的节点添加和删除接口
+ * 6. 支持节点路径查找和父节点追踪
+ */
+
+#if 0
+#    ifndef MULTI_TREE_HPP_
+#        define MULTI_TREE_HPP_
+
+#        include <algorithm>
+#        include <functional>
+#        include <memory>
+#        include <queue>
+#        include <stdexcept>
+#        include <string>
+#        include <unordered_map>
+#        include <unordered_set>
+#        include <utility>
+#        include <vector>
+
+namespace algo {
+
+/**
+ * 通用树节点结构
+ * @tparam T 节点存储的数据类型
+ */
+template <typename T> class TreeNode {
+  public:
+    using node_ptr_t = std::unique_ptr<TreeNode<T>>;
+    using data_ptr_t = std::unique_ptr<T>;
+
+    // ========== 构造函数 ==========
+
+    TreeNode()  = default;
+    ~TreeNode() = default;
+
+    /**
+     * 仅节点名称的构造函数
+     */
+    explicit TreeNode(const std::string & node_name) : node_name_(node_name) {}
+
+    /**
+     * 节点名称 + 输入名称集合
+     */
+    TreeNode(const std::string & node_name, const std::unordered_set<std::string> & input_names) :
+        node_name_(node_name),
+        input_names_(input_names) {}
+
+    /**
+     * 完整构造函数
+     */
+    TreeNode(const std::string & node_name, const std::unordered_set<std::string> & input_names,
+             data_ptr_t data) :
+        node_name_(node_name),
+        input_names_(input_names),
+        data_(std::move(data)) {}
+
+    /**
+     * 仅数据的构造函数
+     */
+    explicit TreeNode(data_ptr_t data) : data_(std::move(data)) {}
+
+    // 禁用拷贝，仅允许移动（unique_ptr语义）
+    TreeNode(const TreeNode &)                 = delete;
+    TreeNode & operator=(const TreeNode &)     = delete;
+    TreeNode(TreeNode &&) noexcept             = default;
+    TreeNode & operator=(TreeNode &&) noexcept = default;
+
+    // ========== Setters ==========
+
+    void addInputName(const std::string & name) { input_names_.insert(name); }
+
+    void setNodeName(const std::string & node_name) { node_name_ = node_name; }
+
+    void setInputNames(const std::unordered_set<std::string> & input_names) {
+        input_names_ = input_names;
+    }
+
+    void setData(data_ptr_t data) { data_ = std::move(data); }
+
+    void setParent(TreeNode * parent) { parent_ = parent; }
+
+    /**
+     * 创建并添加新子节点
+     * @return 指向新创建子节点的原始指针
+     */
+    template <typename... Args> TreeNode * createChild(Args &&... args) {
+        auto   child     = std::make_unique<TreeNode>(std::forward<Args>(args)...);
+        auto * child_ptr = child.get();
+        child_ptr->setParent(this);
+        children_.push_back(std::move(child));
+        return child_ptr;
+    }
+
+    /**
+     * 添加已存在的子节点
+     */
+    TreeNode * addChild(node_ptr_t child) {
+        if (!child) {
+            throw std::invalid_argument("Child node pointer cannot be null");
+        }
+        auto * child_ptr = child.get();
+        child_ptr->setParent(this);
+        children_.push_back(std::move(child));
+        return child_ptr;
+    }
+
+    /**
+     * 移除指定的子节点
+     * @return 被移除的子节点（转移所有权）
+     */
+    node_ptr_t removeChild(TreeNode * child) {
+        auto it = std::find_if(children_.begin(), children_.end(),
+                               [child](const node_ptr_t & node) { return node.get() == child; });
+
+        if (it != children_.end()) {
+            auto removed = std::move(*it);
+            removed->setParent(nullptr);
+            children_.erase(it);
+            return removed;
+        }
+        return nullptr;
+    }
+
+    /**
+     * 根据索引移除子节点
+     */
+    node_ptr_t removeChildAt(size_t index) {
+        if (index >= children_.size()) {
+            throw std::out_of_range("Child index out of range");
+        }
+        auto removed = std::move(children_[index]);
+        removed->setParent(nullptr);
+        children_.erase(children_.begin() + index);
+        return removed;
+    }
+
+    /**
+     * 清空所有子节点
+     */
+    void clearChildren() { children_.clear(); }
+
+    // ========== Getters ==========
+
+    const std::string & getNodeName() const { return node_name_; }
+
+    const std::unordered_set<std::string> & getInputNames() const { return input_names_; }
+
+    T * getData() { return data_.get(); }
+
+    const T * getData() const { return data_.get(); }
+
+    const std::vector<node_ptr_t> & getChildren() const { return children_; }
+
+    size_t getChildrenCount() const { return children_.size(); }
+
+    TreeNode * getParent() { return parent_; }
+
+    const TreeNode * getParent() const { return parent_; }
+
+    TreeNode * getChildAt(size_t index) {
+        if (index >= children_.size()) {
+            throw std::out_of_range("Child index out of range");
+        }
+        return children_[index].get();
+    }
+
+    const TreeNode * getChildAt(size_t index) const {
+        if (index >= children_.size()) {
+            throw std::out_of_range("Child index out of range");
+        }
+        return children_[index].get();
+    }
+
+    bool isLeaf() const { return children_.empty(); }
+
+    bool isRoot() const { return parent_ == nullptr; }
+
+    bool hasData() const { return data_ != nullptr; }
+
+    /**
+     * 获取节点深度（根节点深度为0）
+     */
+    size_t getDepth() const {
+        size_t           depth   = 0;
+        const TreeNode * current = this;
+        while (current->parent_ != nullptr) {
+            ++depth;
+            current = current->parent_;
+        }
+        return depth;
+    }
+
+    /**
+     * 获取子树大小（包括当前节点）
+     */
+    size_t getSubtreeSize() const {
+        size_t count = 1;
+        for (const auto & child : children_) {
+            count += child->getSubtreeSize();
+        }
+        return count;
+    }
+
+  private:
+    std::string                     node_name_;
+    std::unordered_set<std::string> input_names_;
+    data_ptr_t                      data_{ nullptr };
+    std::vector<node_ptr_t>         children_;
+    TreeNode *                      parent_{ nullptr }; // 非拥有指针，用于向上导航
+};
+
+/**
+ * 通用多叉树
+ * @tparam T 节点存储的数据类型
+ */
+template <typename T> class MultiTree {
+  public:
+    using node_t     = TreeNode<T>;
+    using node_ptr_t = std::unique_ptr<node_t>;
+    using data_ptr_t = std::unique_ptr<T>;
+
+    // ========== 构造函数 ==========
+
+    MultiTree()  = default;
+    ~MultiTree() = default;
+
+    /**
+     * 使用树名称构造
+     */
+    explicit MultiTree(const std::string & tree_name) : tree_name_(tree_name) {}
+
+    // 禁用拷贝，仅允许移动
+    MultiTree(const MultiTree &)                 = delete;
+    MultiTree & operator=(const MultiTree &)     = delete;
+    MultiTree(MultiTree &&) noexcept             = default;
+    MultiTree & operator=(MultiTree &&) noexcept = default;
+
+    // ========== 根节点操作 ==========
+
+    void setRoot(node_ptr_t root) {
+        root_ = std::move(root);
+        invalidateCache();
+    }
+
+    /**
+     * 创建根节点
+     */
+    template <typename... Args> node_t * createRoot(Args &&... args) {
+        root_ = std::make_unique<node_t>(std::forward<Args>(args)...);
+        invalidateCache();
+        return root_.get();
+    }
+
+    node_t * getRoot() { return root_.get(); }
+
+    const node_t * getRoot() const { return root_.get(); }
+
+    /**
+     * 释放根节点所有权
+     */
+    node_ptr_t releaseRoot() {
+        invalidateCache();
+        return std::move(root_);
+    }
+
+    // ========== 树属性 ==========
+
+    bool isEmpty() const { return root_ == nullptr; }
+
+    size_t getNodeCount() const {
+        if (isEmpty()) {
+            return 0;
+        }
+        return root_->getSubtreeSize();
+    }
+
+    /**
+     * 获取树的高度
+     */
+    size_t getHeight() const {
+        if (isEmpty()) {
+            return 0;
+        }
+        return calculateHeight(root_.get());
+    }
+
+    void clear() {
+        root_.reset();
+        invalidateCache();
+    }
+
+    const std::string & getTreeName() const { return tree_name_; }
+
+    void setTreeName(const std::string & name) { tree_name_ = name; }
+
+    // ========== 节点查找（带缓存优化） ==========
+
+    /**
+     * 根据节点名称查找节点（使用缓存）
+     */
+    node_t * findNodeByName(const std::string & node_name) {
+        if (isEmpty()) {
+            return nullptr;
+        }
+
+        // 使用缓存加速查找
+        if (use_cache_) {
+            buildCacheIfNeeded();
+            auto it = name_cache_.find(node_name);
+            return (it != name_cache_.end()) ? it->second : nullptr;
+        }
+
+        // 不使用缓存时的线性搜索
+        node_t * result = nullptr;
+        levelOrderTraversal([&](node_t * node) {
+            if (!result && node->getNodeName() == node_name) {
+                result = node;
+            }
+        });
+        return result;
+    }
+
+    const node_t * findNodeByName(const std::string & node_name) const {
+        return const_cast<MultiTree *>(this)->findNodeByName(node_name);
+    }
+
+    /**
+     * 根据单个输入名称查找节点
+     */
+    node_t * findNodeByInputName(const std::string & input_name) {
+        if (isEmpty()) {
+            return nullptr;
+        }
+
+        node_t * result = nullptr;
+        levelOrderTraversal([&](node_t * node) {
+            if (!result) {
+                const auto & input_names = node->getInputNames();
+                if (input_names.count(input_name) > 0) {
+                    result = node;
+                }
+            }
+        });
+        return result;
+    }
+
+    /**
+     * 根据输入名称集合查找节点（要求所有输入都匹配）
+     */
+    node_t * findNodeByInputNames(const std::unordered_set<std::string> & input_names) {
+        if (isEmpty() || input_names.empty()) {
+            return nullptr;
+        }
+
+        node_t * result = nullptr;
+        levelOrderTraversal([&](node_t * node) {
+            if (!result) {
+                const auto & node_input_names = node->getInputNames();
+                if (std::all_of(input_names.begin(), input_names.end(),
+                                [&node_input_names](const std::string & name) {
+                                    return node_input_names.count(name) > 0;
+                                })) {
+                    result = node;
+                }
+            }
+        });
+        return result;
+    }
+
+    /**
+     * 根据谓词查找节点
+     */
+    template <typename Predicate> node_t * findNodeIf(Predicate && pred) {
+        if (isEmpty()) {
+            return nullptr;
+        }
+
+        node_t * result = nullptr;
+        levelOrderTraversal([&](node_t * node) {
+            if (!result && pred(node)) {
+                result = node;
+            }
+        });
+        return result;
+    }
+
+    /**
+     * 查找所有匹配的节点
+     */
+    template <typename Predicate> std::vector<node_t *> findAllNodesIf(Predicate && pred) {
+        std::vector<node_t *> results;
+        if (!isEmpty()) {
+            levelOrderTraversal([&](node_t * node) {
+                if (pred(node)) {
+                    results.push_back(node);
+                }
+            });
+        }
+        return results;
+    }
+
+    /**
+     * 获取从根到指定节点的路径
+     */
+    std::vector<node_t *> getPathToNode(node_t * target) {
+        std::vector<node_t *> path;
+        if (!target) {
+            return path;
+        }
+
+        node_t * current = target;
+        while (current) {
+            path.push_back(current);
+            current = current->getParent();
+        }
+        std::reverse(path.begin(), path.end());
+        return path;
+    }
+
+    // ========== 便捷的节点添加接口 ==========
+
+    /**
+     * 向指定名称的节点添加子节点
+     * @return 新添加的子节点指针，如果父节点未找到则返回nullptr
+     */
+    template <typename... Args>
+    node_t * createChildTo(const std::string & parent_name, Args &&... args) {
+        auto * parent = findNodeByName(parent_name);
+        if (!parent) {
+            return nullptr;
+        }
+        invalidateCache();
+        return parent->createChild(std::forward<Args>(args)...);
+    }
+
+    /**
+     * 向指定节点添加子节点
+     */
+    template <typename... Args> node_t * createChildTo(node_t * parent, Args &&... args) {
+        if (!parent) {
+            throw std::invalid_argument("Parent node cannot be null");
+        }
+        invalidateCache();
+        return parent->createChild(std::forward<Args>(args)...);
+    }
+
+    // ========== 遍历操作 ==========
+
+    /**
+     * 层序遍历（使用原始指针，避免智能指针开销）
+     */
+    template <typename Visitor> void levelOrderTraversal(Visitor && visitor) {
+        if (isEmpty()) {
+            return;
+        }
+
+        std::queue<node_t *> node_queue;
+        node_queue.push(root_.get());
+
+        while (!node_queue.empty()) {
+            auto * current = node_queue.front();
+            node_queue.pop();
+
+            if (current) {
+                visitor(current);
+
+                for (const auto & child : current->getChildren()) {
+                    node_queue.push(child.get());
+                }
+            }
+        }
+    }
+
+    template <typename Visitor> void levelOrderTraversal(Visitor && visitor) const {
+        const_cast<MultiTree *>(this)->levelOrderTraversal(
+            [&visitor](node_t * node) { visitor(const_cast<const node_t *>(node)); });
+    }
+
+    /**
+     * 前序遍历
+     */
+    template <typename Visitor> void preOrderTraversal(Visitor && visitor) {
+        if (!isEmpty()) {
+            preOrderTraversalHelper(root_.get(), std::forward<Visitor>(visitor));
+        }
+    }
+
+    /**
+     * 后序遍历
+     */
+    template <typename Visitor> void postOrderTraversal(Visitor && visitor) {
+        if (!isEmpty()) {
+            postOrderTraversalHelper(root_.get(), std::forward<Visitor>(visitor));
+        }
+    }
+
+    /**
+     * 分层遍历（按层返回节点）
+     */
+    std::vector<std::vector<node_t *>> getLevelOrder() {
+        std::vector<std::vector<node_t *>> levels;
+        if (isEmpty()) {
+            return levels;
+        }
+
+        std::queue<node_t *> node_queue;
+        node_queue.push(root_.get());
+
+        while (!node_queue.empty()) {
+            size_t                level_size = node_queue.size();
+            std::vector<node_t *> current_level;
+
+            for (size_t i = 0; i < level_size; ++i) {
+                auto * node = node_queue.front();
+                node_queue.pop();
+                current_level.push_back(node);
+
+                for (const auto & child : node->getChildren()) {
+                    node_queue.push(child.get());
+                }
+            }
+            levels.push_back(std::move(current_level));
+        }
+        return levels;
+    }
+
+    // ========== 缓存控制 ==========
+
+    void enableCache(bool enable = true) {
+        use_cache_ = enable;
+        if (!enable) {
+            name_cache_.clear();
+        }
+    }
+
+    void rebuildCache() {
+        invalidateCache();
+        buildCacheIfNeeded();
+    }
+
+  private:
+    std::string tree_name_;
+    node_ptr_t  root_{ nullptr };
+
+    // 缓存相关
+    bool                                      use_cache_{ true };
+    bool                                      cache_valid_{ false };
+    std::unordered_map<std::string, node_t *> name_cache_;
+
+    /**
+     * 计算树高度的辅助函数
+     */
+    size_t calculateHeight(const node_t * node) const {
+        if (!node || node->isLeaf()) {
+            return 1;
+        }
+
+        size_t max_height = 0;
+        for (const auto & child : node->getChildren()) {
+            max_height = std::max(max_height, calculateHeight(child.get()));
+        }
+        return max_height + 1;
+    }
+
+    /**
+     * 前序遍历辅助函数
+     */
+    template <typename Visitor> void preOrderTraversalHelper(node_t * node, Visitor && visitor) {
+        if (!node) {
+            return;
+        }
+
+        visitor(node);
+        for (const auto & child : node->getChildren()) {
+            preOrderTraversalHelper(child.get(), std::forward<Visitor>(visitor));
+        }
+    }
+
+    /**
+     * 后序遍历辅助函数
+     */
+    template <typename Visitor> void postOrderTraversalHelper(node_t * node, Visitor && visitor) {
+        if (!node) {
+            return;
+        }
+
+        for (const auto & child : node->getChildren()) {
+            postOrderTraversalHelper(child.get(), std::forward<Visitor>(visitor));
+        }
+        visitor(node);
+    }
+
+    /**
+     * 构建名称查找缓存
+     */
+    void buildCacheIfNeeded() {
+        if (cache_valid_) {
+            return;
+        }
+
+        name_cache_.clear();
+        if (!isEmpty()) {
+            levelOrderTraversal([this](node_t * node) {
+                const auto & name = node->getNodeName();
+                if (!name.empty()) {
+                    name_cache_[name] = node;
+                }
+            });
+        }
+        cache_valid_ = true;
+    }
+
+    /**
+     * 使缓存失效
+     */
+    void invalidateCache() { cache_valid_ = false; }
+};
+
+// ========== ONNX特化 ==========
+
+#        ifdef ONNX_INCLUDED
+#            include <onnx/onnx_pb.h>
+
+namespace onnx_utils {
+
+/**
+ * ONNX节点数据包装类
+ */
+class OnnxNodeData {
+  public:
+    OnnxNodeData() = default;
+
+    explicit OnnxNodeData(onnx::NodeProto * node) : node_(node) {}
+
+    onnx::NodeProto * getNode() const { return node_; }
+
+    void setNode(onnx::NodeProto * node) { node_ = node; }
+
+    bool isValid() const { return node_ != nullptr; }
+
+    // 便捷访问方法
+    std::string getOpType() const { return node_ ? node_->op_type() : ""; }
+
+    int getInputCount() const { return node_ ? node_->input_size() : 0; }
+
+    int getOutputCount() const { return node_ ? node_->output_size() : 0; }
+
+  private:
+    onnx::NodeProto * node_{ nullptr };
+};
+
+// ONNX专用的多叉树类型别名
+using OnnxTree     = algo::MultiTree<OnnxNodeData>;
+using OnnxTreeNode = algo::TreeNode<OnnxNodeData>;
+
+/**
+ * 构建ONNX子图的便捷函数
+ */
+inline OnnxTree buildOnnxSubgraph(const std::string & subgraph_name) {
+    return OnnxTree(subgraph_name);
+}
+
+} // namespace onnx_utils
+#        endif
+
+} // namespace algo
+
+#    endif // MULTI_TREE_HPP_
+#endif
+
+/**
+ * 通用多叉树结构
+ *
+ * 用于构建和管理树形数据结构，支持任意类型的节点数据。
+ * 特别适用于ONNX模型子图等场景。
+ *
+ * 功能特性：
+ * 1. 模板化的树形结构，支持任意数据类型
+ * 2. 使用unique_ptr实现高效的内存管理
+ * 3. 支持范围for循环（层序遍历）
+ * 4. 灵活的节点管理和查找功能
+ * 5. 便捷的节点添加和删除接口
+ * 6. 自动缓存管理和安全的内存释放
+ */
+
+#ifndef MULTI_TREE_HPP_
+#    define MULTI_TREE_HPP_
+
+#    include <algorithm>
+#    include <functional>
+#    include <memory>
+#    include <queue>
+#    include <stdexcept>
+#    include <string>
+#    include <unordered_map>
+#    include <unordered_set>
+#    include <utility>
+#    include <vector>
+
+namespace algo {
+
+/**
+ * 通用树节点结构
+ * @tparam T 节点存储的数据类型
+ */
+template <typename T> class TreeNode {
+  public:
+    using node_ptr_t = std::unique_ptr<TreeNode<T>>;
+    using data_ptr_t = std::unique_ptr<T>;
+
+    // ========== 构造函数 ==========
+
+    TreeNode()  = default;
+    ~TreeNode() = default;
+
+    explicit TreeNode(const std::string & node_name) : node_name_(node_name) {}
+
+    TreeNode(const std::string & node_name, const std::unordered_set<std::string> & input_names) :
+        node_name_(node_name),
+        input_names_(input_names) {}
+
+    TreeNode(const std::string & node_name, const std::unordered_set<std::string> & input_names,
+             data_ptr_t data) :
+        node_name_(node_name),
+        input_names_(input_names),
+        data_(std::move(data)) {}
+
+    explicit TreeNode(data_ptr_t data) : data_(std::move(data)) {}
+
+    // 禁用拷贝，仅允许移动
+    TreeNode(const TreeNode &)                 = delete;
+    TreeNode & operator=(const TreeNode &)     = delete;
+    TreeNode(TreeNode &&) noexcept             = default;
+    TreeNode & operator=(TreeNode &&) noexcept = default;
+
+    // ========== Setters ==========
+
+    void addInputName(const std::string & name) { input_names_.insert(name); }
+
+    void setNodeName(const std::string & node_name) { node_name_ = node_name; }
+
+    void setInputNames(const std::unordered_set<std::string> & input_names) {
+        input_names_ = input_names;
+    }
+
+    void setData(data_ptr_t data) { data_ = std::move(data); }
+
+    void setParent(TreeNode * parent) { parent_ = parent; }
+
+    /**
+     * 创建并添加新子节点
+     */
+    template <typename... Args> TreeNode * createChild(Args &&... args) {
+        auto   child     = std::make_unique<TreeNode>(std::forward<Args>(args)...);
+        auto * child_ptr = child.get();
+        child_ptr->setParent(this);
+        children_.push_back(std::move(child));
+        return child_ptr;
+    }
+
+    /**
+     * 添加已存在的子节点
+     */
+    TreeNode * addChild(node_ptr_t child) {
+        if (!child) {
+            throw std::invalid_argument("Child node pointer cannot be null");
+        }
+        auto * child_ptr = child.get();
+        child_ptr->setParent(this);
+        children_.push_back(std::move(child));
+        return child_ptr;
+    }
+
+    /**
+     * 移除指定的子节点
+     */
+    node_ptr_t removeChild(TreeNode * child) {
+        auto it = std::find_if(children_.begin(), children_.end(),
+                               [child](const node_ptr_t & node) { return node.get() == child; });
+
+        if (it != children_.end()) {
+            auto removed = std::move(*it);
+            removed->setParent(nullptr);
+            children_.erase(it);
+            return removed;
+        }
+        return nullptr;
+    }
+
+    /**
+     * 根据索引移除子节点
+     */
+    node_ptr_t removeChildAt(size_t index) {
+        if (index >= children_.size()) {
+            throw std::out_of_range("Child index out of range");
+        }
+        auto removed = std::move(children_[index]);
+        removed->setParent(nullptr);
+        children_.erase(children_.begin() + index);
+        return removed;
+    }
+
+    /**
+     * 清空所有子节点（后序删除，避免栈溢出）
+     */
+    void clearChildren() {
+        // 后序遍历删除，确保子节点先被删除
+        while (!children_.empty()) {
+            children_.back()->clearChildren();
+            children_.pop_back();
+        }
+    }
+
+    // ========== Getters ==========
+
+    const std::string & getNodeName() const { return node_name_; }
+
+    const std::unordered_set<std::string> & getInputNames() const { return input_names_; }
+
+    T * getData() { return data_.get(); }
+
+    const T * getData() const { return data_.get(); }
+
+    const std::vector<node_ptr_t> & getChildren() const { return children_; }
+
+    size_t getChildrenCount() const { return children_.size(); }
+
+    TreeNode * getParent() { return parent_; }
+
+    const TreeNode * getParent() const { return parent_; }
+
+    TreeNode * getChildAt(size_t index) {
+        if (index >= children_.size()) {
+            throw std::out_of_range("Child index out of range");
+        }
+        return children_[index].get();
+    }
+
+    const TreeNode * getChildAt(size_t index) const {
+        if (index >= children_.size()) {
+            throw std::out_of_range("Child index out of range");
+        }
+        return children_[index].get();
+    }
+
+    bool isLeaf() const { return children_.empty(); }
+
+    bool isRoot() const { return parent_ == nullptr; }
+
+    bool hasData() const { return data_ != nullptr; }
+
+    size_t getDepth() const {
+        size_t           depth   = 0;
+        const TreeNode * current = this;
+        while (current->parent_ != nullptr) {
+            ++depth;
+            current = current->parent_;
+        }
+        return depth;
+    }
+
+    size_t getSubtreeSize() const {
+        size_t count = 1;
+        for (const auto & child : children_) {
+            count += child->getSubtreeSize();
+        }
+        return count;
+    }
+
+  private:
+    std::string                     node_name_;
+    std::unordered_set<std::string> input_names_;
+    data_ptr_t                      data_{ nullptr };
+    std::vector<node_ptr_t>         children_;
+    TreeNode *                      parent_{ nullptr };
+};
+
+/**
+ * 通用多叉树
+ * @tparam T 节点存储的数据类型
+ */
+template <typename T> class MultiTree {
+  public:
+    using node_t     = TreeNode<T>;
+    using node_ptr_t = std::unique_ptr<node_t>;
+    using data_ptr_t = std::unique_ptr<T>;
+
+    // ========== 层序遍历迭代器 ==========
+
+    class Iterator {
+      public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type        = node_t *;
+        using difference_type   = std::ptrdiff_t;
+        using pointer           = node_t **;
+        using reference         = node_t *&;
+
+        Iterator() = default;
+
+        explicit Iterator(node_t * root) {
+            if (root) {
+                queue_.push(root);
+                advance();
+            }
+        }
+
+        node_t * operator*() const { return current_; }
+
+        node_t * operator->() const { return current_; }
+
+        Iterator & operator++() {
+            advance();
+            return *this;
+        }
+
+        Iterator operator++(int) {
+            Iterator tmp = *this;
+            advance();
+            return tmp;
+        }
+
+        bool operator==(const Iterator & other) const { return current_ == other.current_; }
+
+        bool operator!=(const Iterator & other) const { return !(*this == other); }
+
+      private:
+        void advance() {
+            if (queue_.empty()) {
+                current_ = nullptr;
+                return;
+            }
+
+            current_ = queue_.front();
+            queue_.pop();
+
+            if (current_) {
+                for (const auto & child : current_->getChildren()) {
+                    queue_.push(child.get());
+                }
+            }
+        }
+
+        std::queue<node_t *> queue_;
+        node_t *             current_{ nullptr };
+    };
+
+    class ConstIterator {
+      public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type        = const node_t *;
+        using difference_type   = std::ptrdiff_t;
+        using pointer           = const node_t **;
+        using reference         = const node_t *&;
+
+        ConstIterator() = default;
+
+        explicit ConstIterator(const node_t * root) {
+            if (root) {
+                queue_.push(root);
+                advance();
+            }
+        }
+
+        const node_t * operator*() const { return current_; }
+
+        const node_t * operator->() const { return current_; }
+
+        ConstIterator & operator++() {
+            advance();
+            return *this;
+        }
+
+        ConstIterator operator++(int) {
+            ConstIterator tmp = *this;
+            advance();
+            return tmp;
+        }
+
+        bool operator==(const ConstIterator & other) const { return current_ == other.current_; }
+
+        bool operator!=(const ConstIterator & other) const { return !(*this == other); }
+
+      private:
+        void advance() {
+            if (queue_.empty()) {
+                current_ = nullptr;
+                return;
+            }
+
+            current_ = queue_.front();
+            queue_.pop();
+
+            if (current_) {
+                for (const auto & child : current_->getChildren()) {
+                    queue_.push(child.get());
+                }
+            }
+        }
+
+        std::queue<const node_t *> queue_;
+        const node_t *             current_{ nullptr };
+    };
+
+    // ========== 构造函数 ==========
+
+    MultiTree() = default;
+
+    ~MultiTree() { clear(); }
+
+    explicit MultiTree(const std::string & tree_name) : tree_name_(tree_name) {}
+
+    // 禁用拷贝，仅允许移动
+    MultiTree(const MultiTree &)                 = delete;
+    MultiTree & operator=(const MultiTree &)     = delete;
+    MultiTree(MultiTree &&) noexcept             = default;
+    MultiTree & operator=(MultiTree &&) noexcept = default;
+
+    // ========== 迭代器接口 ==========
+
+    Iterator begin() { return Iterator(root_.get()); }
+
+    Iterator end() { return Iterator(); }
+
+    ConstIterator begin() const { return ConstIterator(root_.get()); }
+
+    ConstIterator end() const { return ConstIterator(); }
+
+    ConstIterator cbegin() const { return ConstIterator(root_.get()); }
+
+    ConstIterator cend() const { return ConstIterator(); }
+
+    // ========== 根节点操作 ==========
+
+    void setRoot(node_ptr_t root) {
+        root_ = std::move(root);
+        invalidateCache();
+    }
+
+    template <typename... Args> node_t * createRoot(Args &&... args) {
+        root_ = std::make_unique<node_t>(std::forward<Args>(args)...);
+        invalidateCache();
+        return root_.get();
+    }
+
+    node_t * getRoot() { return root_.get(); }
+
+    const node_t * getRoot() const { return root_.get(); }
+
+    node_ptr_t releaseRoot() {
+        invalidateCache();
+        return std::move(root_);
+    }
+
+    // ========== 树属性 ==========
+
+    bool isEmpty() const { return root_ == nullptr; }
+
+    size_t getNodeCount() const {
+        if (isEmpty()) {
+            return 0;
+        }
+        return root_->getSubtreeSize();
+    }
+
+    size_t getHeight() const {
+        if (isEmpty()) {
+            return 0;
+        }
+        return calculateHeight(root_.get());
+    }
+
+    /**
+     * 安全清空树（后序删除，避免栈溢出，并释放所有内存）
+     */
+    void clear() {
+        if (root_) {
+            // 后序遍历删除，确保深层节点先被释放
+            clearNodeRecursive(root_.get());
+            root_.reset();
+        }
+        invalidateCache();
+    }
+
+    const std::string & getTreeName() const { return tree_name_; }
+
+    void setTreeName(const std::string & name) { tree_name_ = name; }
+
+    // ========== 节点查找（带缓存优化） ==========
+
+    node_t * findNodeByName(const std::string & node_name) {
+        if (isEmpty()) {
+            return nullptr;
+        }
+
+        if (use_cache_) {
+            buildCacheIfNeeded();
+            auto it = name_cache_.find(node_name);
+            return (it != name_cache_.end()) ? it->second : nullptr;
+        }
+
+        for (auto * node : *this) {
+            if (node->getNodeName() == node_name) {
+                return node;
+            }
+        }
+        return nullptr;
+    }
+
+    const node_t * findNodeByName(const std::string & node_name) const {
+        return const_cast<MultiTree *>(this)->findNodeByName(node_name);
+    }
+
+    node_t * findNodeByInputName(const std::string & input_name) {
+        if (isEmpty()) {
+            return nullptr;
+        }
+
+        for (auto * node : *this) {
+            const auto & input_names = node->getInputNames();
+            if (input_names.count(input_name) > 0) {
+                return node;
+            }
+        }
+        return nullptr;
+    }
+
+    node_t * findNodeByInputNames(const std::unordered_set<std::string> & input_names) {
+        if (isEmpty() || input_names.empty()) {
+            return nullptr;
+        }
+
+        for (auto * node : *this) {
+            const auto & node_input_names = node->getInputNames();
+            if (std::all_of(input_names.begin(), input_names.end(),
+                            [&node_input_names](const std::string & name) {
+                                return node_input_names.count(name) > 0;
+                            })) {
+                return node;
+            }
+        }
+        return nullptr;
+    }
+
+    template <typename Predicate> node_t * findNodeIf(Predicate && pred) {
+        for (auto * node : *this) {
+            if (pred(node)) {
+                return node;
+            }
+        }
+        return nullptr;
+    }
+
+    template <typename Predicate> std::vector<node_t *> findAllNodesIf(Predicate && pred) {
+        std::vector<node_t *> results;
+        for (auto * node : *this) {
+            if (pred(node)) {
+                results.push_back(node);
+            }
+        }
+        return results;
+    }
+
+    std::vector<node_t *> getPathToNode(node_t * target) {
+        std::vector<node_t *> path;
+        if (!target) {
+            return path;
+        }
+
+        node_t * current = target;
+        while (current) {
+            path.push_back(current);
+            current = current->getParent();
+        }
+        std::reverse(path.begin(), path.end());
+        return path;
+    }
+
+    // ========== 便捷的节点添加接口 ==========
+
+    template <typename... Args>
+    node_t * createChildTo(const std::string & parent_name, Args &&... args) {
+        auto * parent = findNodeByName(parent_name);
+        if (!parent) {
+            return nullptr;
+        }
+        invalidateCache();
+        return parent->createChild(std::forward<Args>(args)...);
+    }
+
+    template <typename... Args> node_t * createChildTo(node_t * parent, Args &&... args) {
+        if (!parent) {
+            throw std::invalid_argument("Parent node cannot be null");
+        }
+        invalidateCache();
+        return parent->createChild(std::forward<Args>(args)...);
+    }
+
+    /**
+     * 链式添加子节点（简化构建）
+     */
+    template <typename... Args>
+    MultiTree & addNode(const std::string & parent_name, Args &&... args) {
+        createChildTo(parent_name, std::forward<Args>(args)...);
+        return *this;
+    }
+
+    // ========== 遍历操作（仅层序遍历） ==========
+
+    template <typename Visitor> void traverse(Visitor && visitor) {
+        for (auto * node : *this) {
+            visitor(node);
+        }
+    }
+
+    template <typename Visitor> void traverse(Visitor && visitor) const {
+        for (const auto * node : *this) {
+            visitor(node);
+        }
+    }
+
+    /**
+     * 获取所有节点（层序）
+     */
+    std::vector<node_t *> getAllNodes() {
+        std::vector<node_t *> nodes;
+        for (auto * node : *this) {
+            nodes.push_back(node);
+        }
+        return nodes;
+    }
+
+    /**
+     * 分层遍历（按层返回节点）
+     */
+    std::vector<std::vector<node_t *>> getLevelOrder() {
+        std::vector<std::vector<node_t *>> levels;
+        if (isEmpty()) {
+            return levels;
+        }
+
+        std::queue<node_t *> node_queue;
+        node_queue.push(root_.get());
+
+        while (!node_queue.empty()) {
+            size_t                level_size = node_queue.size();
+            std::vector<node_t *> current_level;
+
+            for (size_t i = 0; i < level_size; ++i) {
+                auto * node = node_queue.front();
+                node_queue.pop();
+                current_level.push_back(node);
+
+                for (const auto & child : node->getChildren()) {
+                    node_queue.push(child.get());
+                }
+            }
+            levels.push_back(std::move(current_level));
+        }
+        return levels;
+    }
+
+    // ========== 缓存控制 ==========
+
+    void enableCache(bool enable = true) {
+        use_cache_ = enable;
+        if (!enable) {
+            name_cache_.clear();
+            cache_valid_ = false;
+        }
+    }
+
+    void rebuildCache() {
+        invalidateCache();
+        buildCacheIfNeeded();
+    }
+
+  private:
+    std::string tree_name_;
+    node_ptr_t  root_{ nullptr };
+
+    // 缓存相关
+    bool                                      use_cache_{ true };
+    bool                                      cache_valid_{ false };
+    std::unordered_map<std::string, node_t *> name_cache_;
+
+    size_t calculateHeight(const node_t * node) const {
+        if (!node || node->isLeaf()) {
+            return 1;
+        }
+
+        size_t max_height = 0;
+        for (const auto & child : node->getChildren()) {
+            max_height = std::max(max_height, calculateHeight(child.get()));
+        }
+        return max_height + 1;
+    }
+
+    /**
+     * 递归清空节点（后序删除）
+     */
+    void clearNodeRecursive(node_t * node) {
+        if (!node) {
+            return;
+        }
+
+        // 先删除所有子节点
+        for (const auto & child : node->getChildren()) {
+            clearNodeRecursive(child.get());
+        }
+
+        // 清空子节点容器
+        node->clearChildren();
+    }
+
+    void buildCacheIfNeeded() {
+        if (cache_valid_) {
+            return;
+        }
+
+        name_cache_.clear();
+        if (!isEmpty()) {
+            for (auto * node : *this) {
+                const auto & name = node->getNodeName();
+                if (!name.empty()) {
+                    name_cache_[name] = node;
+                }
+            }
+        }
+        cache_valid_ = true;
+    }
+
+    void invalidateCache() { cache_valid_ = false; }
+};
+
+// ========== ONNX特化 ==========
+
+#    ifdef ONNX_INCLUDED
+#        include <onnx/onnx_pb.h>
+
+namespace onnx_utils {
+
+class OnnxNodeData {
+  public:
+    OnnxNodeData() = default;
+
+    explicit OnnxNodeData(onnx::NodeProto * node) : node_(node) {}
+
+    onnx::NodeProto * getNode() const { return node_; }
+
+    void setNode(onnx::NodeProto * node) { node_ = node; }
+
+    bool isValid() const { return node_ != nullptr; }
+
+    std::string getOpType() const { return node_ ? node_->op_type() : ""; }
+
+    int getInputCount() const { return node_ ? node_->input_size() : 0; }
+
+    int getOutputCount() const { return node_ ? node_->output_size() : 0; }
+
+  private:
+    onnx::NodeProto * node_{ nullptr };
+};
+
+using OnnxTree     = algo::MultiTree<OnnxNodeData>;
+using OnnxTreeNode = algo::TreeNode<OnnxNodeData>;
+
+/**
+ * 便捷的ONNX子图构建器
+ */
+class OnnxSubgraphBuilder {
+  public:
+    explicit OnnxSubgraphBuilder(const std::string & name) : tree_(name) {}
+
+    OnnxSubgraphBuilder & root(const std::string & node_name) {
+        tree_.createRoot(node_name);
+        return *this;
+    }
+
+    OnnxSubgraphBuilder & child(const std::string & parent_name, const std::string & child_name) {
+        tree_.createChildTo(parent_name, child_name);
+        return *this;
+    }
+
+    OnnxTree build() { return std::move(tree_); }
+
+  private:
+    OnnxTree tree_;
+};
+
+} // namespace onnx_utils
+#    endif
+
+} // namespace algo
+
+#endif // MULTI_TREE_HPP_
