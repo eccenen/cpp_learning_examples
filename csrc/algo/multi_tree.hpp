@@ -18,8 +18,11 @@
 
 #include <algorithm>
 #include <functional>
+#include <iostream>
+#include <map>
 #include <memory>
 #include <queue>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -111,7 +114,20 @@ template <typename T> class TreeNode {
         if (it != children_.end()) {
             auto removed = std::move(*it);
             removed->setParent(nullptr);
-            children_.erase(it);
+
+            // 将被删除节点的子节点提升到当前节点下，保持树的连通性
+            auto & grandchildren = removed->getChildren();
+            for (auto & grandchild : grandchildren) {
+                grandchild->setParent(this);
+            }
+
+            // 将孙子节点插入到被删除节点的位置
+            children_.insert(children_.erase(it), std::make_move_iterator(grandchildren.begin()),
+                             std::make_move_iterator(grandchildren.end()));
+
+            // 清空被删除节点的子节点列表（所有权已转移）
+            grandchildren.clear();
+
             return removed;
         }
         return nullptr;
@@ -126,7 +142,21 @@ template <typename T> class TreeNode {
         }
         auto removed = std::move(children_[index]);
         removed->setParent(nullptr);
-        children_.erase(children_.begin() + index);
+
+        // 将被删除节点的子节点提升到当前节点下，保持树的连通性
+        auto & grandchildren = removed->getChildren();
+        for (auto & grandchild : grandchildren) {
+            grandchild->setParent(this);
+        }
+
+        // 将孙子节点插入到被删除节点的位置
+        auto insert_pos = children_.erase(children_.begin() + index);
+        children_.insert(insert_pos, std::make_move_iterator(grandchildren.begin()),
+                         std::make_move_iterator(grandchildren.end()));
+
+        // 清空被删除节点的子节点列表（所有权已转移）
+        grandchildren.clear();
+
         return removed;
     }
 
@@ -151,6 +181,10 @@ template <typename T> class TreeNode {
 
     const T * getData() const { return data_.get(); }
 
+    // 非const 版本，用于修改或移动子节点所有权
+    std::vector<node_ptr_t> & getChildren() { return children_; }
+
+    // const 版本，供只读访问使用
     const std::vector<node_ptr_t> & getChildren() const { return children_; }
 
     size_t getChildrenCount() const { return children_.size(); }
@@ -195,6 +229,53 @@ template <typename T> class TreeNode {
             count += child->getSubtreeSize();
         }
         return count;
+    }
+
+    // ========== 树形打印 ==========
+
+    /**
+     * 打印以当前节点为根的子树
+     * @param prefix 前缀字符串（用于缩进和连接线）
+     * @param is_last 是否是父节点的最后一个子节点
+     * @param show_details 是否显示详细信息（深度、子节点数等）
+     */
+    void printTree(const std::string & prefix = "", bool is_last = true,
+                   bool show_details = false) const {
+        // 打印当前节点的前缀和连接符
+        std::cout << prefix;
+
+        // 如果不是根节点，打印树形连接符
+        if (parent_ != nullptr) {
+            std::cout << (is_last ? "└── " : "├── ");
+        }
+
+        // 打印节点名称
+        std::cout << node_name_;
+
+        // 打印详细信息
+        if (show_details) {
+            std::cout << " [深度:" << getDepth() << ", 子节点:" << getChildrenCount();
+            if (hasData()) {
+                std::cout << ", 有数据";
+            }
+            if (!input_names_.empty()) {
+                std::cout << ", 输入:" << input_names_.size();
+            }
+            std::cout << "]";
+        }
+
+        std::cout << std::endl;
+
+        // 递归打印子节点
+        for (size_t i = 0; i < children_.size(); ++i) {
+            std::string new_prefix = prefix;
+            // 如果当前节点不是根节点，需要添加缩进
+            if (parent_ != nullptr) {
+                new_prefix += (is_last ? "    " : "│   ");
+            }
+            bool is_last_child = (i == children_.size() - 1);
+            children_[i]->printTree(new_prefix, is_last_child, show_details);
+        }
     }
 
   private:
@@ -589,6 +670,132 @@ template <typename T> class MultiTree {
         return levels;
     }
 
+    // ========== 树形打印 ==========
+
+    /**
+     * 打印整棵树的结构
+     * @param show_details 是否显示详细信息（深度、子节点数等）
+     */
+    void printTree(bool show_details = false) const {
+        if (isEmpty()) {
+            std::cout << "(空树)" << std::endl;
+            return;
+        }
+
+        if (!tree_name_.empty()) {
+            std::cout << "树: " << tree_name_ << std::endl;
+        }
+
+        root_->printTree("", true, show_details);
+
+        if (show_details) {
+            std::cout << "\n统计信息:" << std::endl;
+            std::cout << "  总节点数: " << getNodeCount() << std::endl;
+            std::cout << "  树高度: " << getHeight() << std::endl;
+        }
+    }
+
+    /**
+     * 横向展开打印整棵树（根节点在顶部，子节点向下方两侧展开）
+     * @param merge_duplicates 是否合并同名节点（默认true）
+     */
+    void printTreeHorizontal(bool merge_duplicates = true) const {
+        if (isEmpty()) {
+            std::cout << "(空树)" << std::endl;
+            return;
+        }
+
+        if (!tree_name_.empty()) {
+            std::cout << "树: " << tree_name_ << std::endl;
+        }
+
+        if (merge_duplicates) {
+            printTreeHorizontalMerged();
+        } else {
+            printTreeHorizontalSimple();
+        }
+    }
+
+  private:
+    /**
+     * 简单版本的横向打印（不合并同名节点）
+     */
+    void printTreeHorizontalSimple() const {
+        // 计算树的宽度和高度
+        size_t tree_height = getHeight();
+        size_t tree_width = calculateTreeWidth(root_.get()) * 3; // 增加宽度以便更好地显示
+
+        // 创建二维画布
+        std::vector<std::vector<std::string>> canvas(tree_height * 2 - 1,
+                                                     std::vector<std::string>(tree_width, " "));
+
+        // 在画布上绘制树
+        drawNodeHorizontal(canvas, root_.get(), 0, 0, tree_width);
+
+        // 打印画布（移除尾部空格）
+        for (const auto & row : canvas) {
+            std::string line;
+            for (const auto & cell : row) {
+                line += cell;
+            }
+            while (!line.empty() && line.back() == ' ') {
+                line.pop_back();
+            }
+            std::cout << line << std::endl;
+        }
+    }
+
+    /**
+     * 合并同名节点的横向打印
+     */
+    void printTreeHorizontalMerged() const {
+        // 按层级收集节点，并去重同名节点
+        std::map<size_t, std::map<std::string, std::vector<const node_t *>>> level_nodes;
+        collectNodesByLevel(root_.get(), 0, level_nodes);
+
+        // 创建简化的层级结构
+        std::vector<std::vector<std::pair<std::string, std::vector<const node_t *>>>> levels;
+        for (const auto & [level, nodes_map] : level_nodes) {
+            std::vector<std::pair<std::string, std::vector<const node_t *>>> level_data;
+            for (const auto & [name, node_list] : nodes_map) {
+                level_data.push_back({ name, node_list });
+            }
+            levels.push_back(level_data);
+        }
+
+        // 计算总宽度
+        size_t max_width = 0;
+        for (const auto & level : levels) {
+            size_t level_width = 0;
+            for (const auto & node_info : level) {
+                level_width += node_info.first.length() + 4;
+            }
+            max_width = std::max(max_width, level_width);
+        }
+        max_width = std::max(max_width, size_t(100));
+
+        // 创建画布
+        size_t canvas_height = levels.empty() ? 1 : levels.size() * 2 - 1;
+        std::vector<std::vector<std::string>> canvas(canvas_height,
+                                                     std::vector<std::string>(max_width, " "));
+
+        // 绘制合并后的树
+        drawMergedTree(canvas, levels, max_width);
+
+        // 打印画布
+        for (const auto & row : canvas) {
+            std::string line;
+            for (const auto & cell : row) {
+                line += cell;
+            }
+            while (!line.empty() && line.back() == ' ') {
+                line.pop_back();
+            }
+            std::cout << line << std::endl;
+        }
+    }
+
+  public:
     // ========== 缓存控制 ==========
 
     void enableCache(bool enable = true) {
@@ -660,6 +867,344 @@ template <typename T> class MultiTree {
     }
 
     void invalidateCache() { cache_valid_ = false; }
+
+    /**
+     * 递归收集每一层的节点，按名称去重
+     */
+    void collectNodesByLevel(
+        const node_t * node, size_t level,
+        std::map<size_t, std::map<std::string, std::vector<const node_t *>>> & level_nodes) const {
+        if (!node) {
+            return;
+        }
+
+        // 将节点添加到对应层级
+        level_nodes[level][node->getNodeName()].push_back(node);
+
+        // 递归处理子节点
+        for (const auto & child : node->getChildren()) {
+            collectNodesByLevel(child.get(), level + 1, level_nodes);
+        }
+    }
+
+    /**
+     * 绘制合并同名节点后的树
+     */
+    void drawMergedTree(
+        std::vector<std::vector<std::string>> & canvas,
+        const std::vector<std::vector<std::pair<std::string, std::vector<const node_t *>>>> &
+               levels,
+        size_t max_width) const {
+        if (levels.empty()) {
+            return;
+        }
+
+        // 为每层的节点分配位置
+        std::vector<std::map<std::string, size_t>> level_positions(levels.size());
+
+        for (size_t level_idx = 0; level_idx < levels.size(); ++level_idx) {
+            const auto & level      = levels[level_idx];
+            size_t       node_count = level.size();
+
+            if (node_count == 0) {
+                continue;
+            }
+
+            // 计算这一层所有节点名称的总长度
+            size_t total_name_length = 0;
+            for (const auto & [name, nodes] : level) {
+                total_name_length += name.length();
+            }
+
+            // 计算可用于间距的空间
+            size_t available_space =
+                max_width > total_name_length ? max_width - total_name_length : max_width / 2;
+            size_t spacing =
+                node_count > 1 ? available_space / (node_count + 1) : available_space / 2;
+            spacing = std::max(spacing, size_t(2)); // 最小间距
+
+            // 分配位置
+            size_t current_x = spacing;
+            for (const auto & [name, nodes] : level) {
+                size_t node_center               = current_x + name.length() / 2;
+                level_positions[level_idx][name] = node_center;
+                current_x += name.length() + spacing;
+            }
+        }
+
+        // 绘制节点和连接线
+        for (size_t level_idx = 0; level_idx < levels.size(); ++level_idx) {
+            const auto & level = levels[level_idx];
+            size_t       row   = level_idx * 2;
+
+            // 绘制当前层的节点
+            for (const auto & [name, nodes] : level) {
+                size_t current_pos = level_positions[level_idx][name];
+                size_t node_width  = name.length();
+                size_t start_pos =
+                    (current_pos > node_width / 2) ? current_pos - node_width / 2 : 0;
+
+                // 绘制节点名称
+                for (size_t i = 0; i < node_width && start_pos + i < canvas[0].size(); ++i) {
+                    canvas[row][start_pos + i] = std::string(1, name[i]);
+                }
+
+                // 如果有下一层，绘制连接线
+                if (level_idx + 1 < levels.size() && !nodes.empty() && row + 1 < canvas.size()) {
+                    // 收集所有子节点的名称和位置
+                    std::set<std::string> child_names;
+                    std::vector<size_t>   child_positions;
+                    std::set<std::string> processed_children;
+
+                    for (const auto * node : nodes) {
+                        for (const auto & child : node->getChildren()) {
+                            std::string child_name = child->getNodeName();
+                            if (processed_children.find(child_name) == processed_children.end()) {
+                                child_names.insert(child_name);
+                                child_positions.push_back(
+                                    level_positions[level_idx + 1][child_name]);
+                                processed_children.insert(child_name);
+                            }
+                        }
+                    }
+
+                    if (!child_positions.empty()) {
+                        // 排序子节点位置
+                        std::sort(child_positions.begin(), child_positions.end());
+
+                        // 绘制连接线
+                        if (child_positions.size() == 1) {
+                            // 单个子节点：直线向下
+                            size_t child_pos = child_positions[0];
+
+                            // 从父节点到子节点画线
+                            size_t from = std::min(current_pos, child_pos);
+                            size_t to   = std::max(current_pos, child_pos);
+
+                            if (from == to) {
+                                // 垂直线
+                                if (current_pos < canvas[0].size()) {
+                                    canvas[row + 1][current_pos] = "│";
+                                }
+                            } else {
+                                // 斜线连接
+                                for (size_t i = from; i <= to && i < canvas[0].size(); ++i) {
+                                    if (canvas[row + 1][i] == " ") {
+                                        canvas[row + 1][i] = "─";
+                                    }
+                                }
+                                if (from < canvas[0].size()) {
+                                    canvas[row + 1][from] = (from == current_pos) ? "└" : "┌";
+                                }
+                                if (to < canvas[0].size()) {
+                                    canvas[row + 1][to] = (to == current_pos) ? "┘" : "┐";
+                                }
+                            }
+                        } else {
+                            // 多个子节点
+                            size_t leftmost  = child_positions.front();
+                            size_t rightmost = child_positions.back();
+
+                            // 绘制横线
+                            for (size_t i = leftmost; i <= rightmost && i < canvas[0].size(); ++i) {
+                                if (canvas[row + 1][i] == " ") {
+                                    canvas[row + 1][i] = "─";
+                                }
+                            }
+
+                            // 绘制分支点
+                            for (size_t i = 0; i < child_positions.size(); ++i) {
+                                size_t pos = child_positions[i];
+                                if (pos >= canvas[0].size()) {
+                                    continue;
+                                }
+
+                                if (i == 0) {
+                                    canvas[row + 1][pos] = "┌";
+                                } else if (i == child_positions.size() - 1) {
+                                    canvas[row + 1][pos] = "┐";
+                                } else {
+                                    canvas[row + 1][pos] = "┬";
+                                }
+                            }
+
+                            // 连接父节点到横线
+                            if (current_pos >= leftmost && current_pos <= rightmost &&
+                                current_pos < canvas[0].size()) {
+                                canvas[row + 1][current_pos] = "┴";
+                            } else if (current_pos < leftmost && current_pos < canvas[0].size()) {
+                                // 父节点在左边
+                                for (size_t i = current_pos; i < leftmost && i < canvas[0].size();
+                                     ++i) {
+                                    if (canvas[row + 1][i] == " ") {
+                                        canvas[row + 1][i] = "─";
+                                    }
+                                }
+                                if (current_pos < canvas[0].size()) {
+                                    canvas[row + 1][current_pos] = "┘";
+                                }
+                                canvas[row + 1][leftmost] = "┌";
+                            } else if (current_pos > rightmost && current_pos < canvas[0].size()) {
+                                // 父节点在右边
+                                for (size_t i = rightmost; i < current_pos && i < canvas[0].size();
+                                     ++i) {
+                                    if (canvas[row + 1][i] == " ") {
+                                        canvas[row + 1][i] = "─";
+                                    }
+                                }
+                                canvas[row + 1][rightmost] = "┐";
+                                if (current_pos < canvas[0].size()) {
+                                    canvas[row + 1][current_pos] = "└";
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 计算以节点为根的子树在横向打印时需要的宽度
+     */
+    size_t calculateTreeWidth(const node_t * node) const {
+        if (!node) {
+            return 0;
+        }
+
+        // 节点名称的宽度
+        size_t node_width = node->getNodeName().length();
+
+        if (node->isLeaf()) {
+            return node_width;
+        }
+
+        // 计算所有子节点的总宽度
+        size_t children_width = 0;
+        for (const auto & child : node->getChildren()) {
+            children_width += calculateTreeWidth(child.get());
+        }
+
+        // 加上子节点之间的间距
+        if (node->getChildrenCount() > 1) {
+            children_width += (node->getChildrenCount() - 1) * 2;
+        }
+
+        return std::max(node_width, children_width);
+    }
+
+    /**
+     * 在画布上绘制节点及其子树（横向展开版本）
+     * @param canvas 二维字符画布
+     * @param node 当前节点
+     * @param row 当前行位置
+     * @param left 左边界
+     * @param right 右边界
+     */
+    void drawNodeHorizontal(std::vector<std::vector<std::string>> & canvas, const node_t * node,
+                            size_t row, size_t left, size_t right) const {
+        if (!node || row >= canvas.size() || left >= right) {
+            return;
+        }
+
+        // 计算节点在当前区域的中心位置
+        size_t      node_width = node->getNodeName().length();
+        size_t      center     = (left + right) / 2;
+        size_t      node_start = (center > node_width / 2) ? center - node_width / 2 : 0;
+        std::string node_name  = node->getNodeName();
+
+        // 在画布上绘制节点名称
+        for (size_t i = 0; i < node_width && node_start + i < canvas[0].size(); ++i) {
+            canvas[row][node_start + i] = std::string(1, node_name[i]);
+        }
+
+        // 如果有子节点，绘制连接线
+        if (!node->isLeaf() && row + 2 < canvas.size()) {
+            const auto & children    = node->getChildren();
+            size_t       child_count = children.size();
+
+            if (child_count == 0) {
+                return;
+            }
+
+            // 计算每个子节点的位置
+            std::vector<size_t> child_centers;
+            size_t              available_width = right - left;
+            size_t              spacing         = available_width / (child_count + 1);
+
+            for (size_t i = 0; i < child_count; ++i) {
+                size_t child_center = left + spacing * (i + 1);
+                child_centers.push_back(child_center);
+            }
+
+            // 绘制从父节点到子节点的连接线
+            if (child_count == 1) {
+                // 单个子节点：直线向下
+                if (center < canvas[0].size()) {
+                    canvas[row + 1][center] = "│";
+                }
+            } else {
+                // 多个子节点：绘制分叉结构
+                size_t leftmost  = child_centers.front();
+                size_t rightmost = child_centers.back();
+
+                // 绘制横线
+                for (size_t i = leftmost; i <= rightmost && i < canvas[0].size(); ++i) {
+                    if (canvas[row + 1][i] == " ") {
+                        canvas[row + 1][i] = "─";
+                    }
+                }
+
+                // 绘制分支点
+                for (size_t i = 0; i < child_count; ++i) {
+                    size_t pos = child_centers[i];
+                    if (pos >= canvas[0].size()) {
+                        continue;
+                    }
+
+                    if (i == 0) {
+                        canvas[row + 1][pos] = "┌";
+                    } else if (i == child_count - 1) {
+                        canvas[row + 1][pos] = "┐";
+                    } else {
+                        canvas[row + 1][pos] = "┬";
+                    }
+                }
+
+                // 连接父节点到横线
+                if (center >= leftmost && center <= rightmost && center < canvas[0].size()) {
+                    canvas[row + 1][center] = "┴";
+                } else if (center < leftmost && center < canvas[0].size()) {
+                    // 父节点在左边，绘制斜线
+                    for (size_t i = center; i <= leftmost && i < canvas[0].size(); ++i) {
+                        if (canvas[row + 1][i] == " ") {
+                            canvas[row + 1][i] = "─";
+                        }
+                    }
+                    canvas[row + 1][center]   = "┘";
+                    canvas[row + 1][leftmost] = "┌";
+                } else if (center > rightmost && center < canvas[0].size()) {
+                    // 父节点在右边
+                    for (size_t i = rightmost; i <= center && i < canvas[0].size(); ++i) {
+                        if (canvas[row + 1][i] == " ") {
+                            canvas[row + 1][i] = "─";
+                        }
+                    }
+                    canvas[row + 1][center]    = "└";
+                    canvas[row + 1][rightmost] = "┐";
+                }
+            }
+
+            // 递归绘制子节点
+            for (size_t i = 0; i < child_count; ++i) {
+                size_t child_left = (i == 0) ? left : (child_centers[i - 1] + child_centers[i]) / 2;
+                size_t child_right =
+                    (i == child_count - 1) ? right : (child_centers[i] + child_centers[i + 1]) / 2;
+
+                drawNodeHorizontal(canvas, children[i].get(), row + 2, child_left, child_right);
+            }
+        }
+    }
 };
 
 // ========== ONNX特化 ==========

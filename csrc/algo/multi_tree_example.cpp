@@ -346,6 +346,148 @@ void example12_memory_safety() {
     std::cout << "树是否为空: " << (tree.isEmpty() ? "是" : "否") << std::endl;
 }
 
+/**
+ * 示例13: 树形打印 - 可视化树的结构
+ */
+void example13_print_tree() {
+    printSeparator("示例13: 树形打印");
+
+    algo::MultiTree<SimpleNodeData> tree("组织架构");
+    auto *                          root = tree.createRoot("CEO");
+
+    // 构建一个组织架构树
+    auto * cto = root->createChild("CTO");
+    auto * cfo = root->createChild("CFO");
+    auto * coo = root->createChild("COO");
+
+    // CTO 下的团队
+    auto * backend_team  = cto->createChild("后端团队");
+    auto * frontend_team = cto->createChild("前端团队");
+    auto * ai_team       = cto->createChild("AI团队");
+
+    backend_team->createChild("服务器开发");
+    backend_team->createChild("数据库管理");
+    frontend_team->createChild("Web开发");
+    frontend_team->createChild("移动开发");
+    ai_team->createChild("算法研发");
+    ai_team->createChild("数据标注");
+
+    // CFO 下的团队
+    cfo->createChild("财务部");
+    cfo->createChild("审计部");
+
+    // COO 下的团队
+    auto * ops = coo->createChild("运营部");
+    ops->createChild("市场营销");
+    ops->createChild("客户服务");
+
+    std::cout << "\n基本树形打印:\n";
+    tree.printTree();
+
+    std::cout << "\n\n带详细信息的树形打印:\n";
+    tree.printTree(true);
+
+    // 演示单个节点的打印
+    std::cout << "\n\n只打印CTO部门的子树:\n";
+    cto->printTree("", true, false);
+}
+
+/**
+ * 示例14: 横向展开树形打印
+ */
+void example14_print_tree_horizontal() {
+    printSeparator("示例14: 横向展开树形打印");
+
+    // 示例1: 简单的二叉树
+    algo::MultiTree<SimpleNodeData> tree1("简单示例");
+    auto *                          root1 = tree1.createRoot("root");
+    auto *                          c1    = root1->createChild("child1");
+    auto *                          c2    = root1->createChild("child2");
+    c1->createChild("gc1");
+    c1->createChild("gc2");
+    c2->createChild("gc3");
+
+    std::cout << "\n示例1 - 简单二叉树:\n";
+    tree1.printTreeHorizontal();
+
+    // 示例2: 不对称树
+    algo::MultiTree<SimpleNodeData> tree2("不对称树");
+    auto *                          root2 = tree2.createRoot("A");
+    auto *                          b     = root2->createChild("B");
+    auto *                          c     = root2->createChild("C");
+    auto *                          d     = root2->createChild("D");
+
+    b->createChild("E");
+    auto * f = b->createChild("F");
+    f->createChild("G");
+    f->createChild("H");
+
+    c->createChild("I");
+
+    std::cout << "\n\n示例2 - 不对称树:\n";
+    tree2.printTreeHorizontal();
+
+    // 示例3: 多子节点
+    algo::MultiTree<SimpleNodeData> tree3("多叉树");
+    auto *                          root3 = tree3.createRoot("根");
+    root3->createChild("子1");
+    root3->createChild("子2");
+    root3->createChild("子3");
+    root3->createChild("子4");
+    root3->createChild("子5");
+
+    std::cout << "\n\n示例3 - 多个子节点:\n";
+    tree3.printTreeHorizontal();
+
+    // 示例4: 单节点树
+    algo::MultiTree<SimpleNodeData> tree4("单节点");
+    tree4.createRoot("单独节点");
+
+    std::cout << "\n\n示例4 - 单节点树:\n";
+    tree4.printTreeHorizontal();
+
+    // 示例5: 空树
+    algo::MultiTree<SimpleNodeData> tree5("空树");
+    std::cout << "\n\n示例5 - 空树:\n";
+    tree5.printTreeHorizontal();
+}
+
+void example15_merge_nodes() {
+    printSeparator("示例15: 合并同名节点的横向打印");
+
+    // 示例1: 演示节点合并效果
+    algo::MultiTree<SimpleNodeData> tree("节点合并示例");
+    auto *                          root = tree.createRoot("root_node");
+
+    auto * child_0 = root->createChild("child_0");
+    auto * child_1 = root->createChild("child_1");
+    auto * child_2 = root->createChild("child_2");
+
+    auto * child_0_0 = child_0->createChild("child_0_0");
+    auto * child_0_1 = child_0->createChild("child_0_1");
+
+    child_1->createChild("child_1_0");
+    child_2->createChild("child_2_0");
+
+    // 创建共享子节点（两个父节点指向同名节点）
+    child_0_0->createChild("child_0_0_0");
+    child_0_1->createChild("child_0_0_0"); // 同名子节点
+
+    std::cout << "\n垂直打印 (传统方式):\n";
+    tree.printTree();
+
+    std::cout << "\n\n横向打印 - 未合并同名节点:\n";
+    tree.printTreeHorizontal(false); // 不合并
+
+    std::cout << "\n\n横向打印 - 合并同名节点:\n";
+    tree.printTreeHorizontal(true); // 合并同名节点
+
+    std::cout << "\n说明:\n";
+    std::cout << "  - 'child_0_0_0' 是 'child_0_0' 和 'child_0_1' 的共同子节点\n";
+    std::cout << "  - 合并模式下，同名节点只显示一次，多个父节点的连线会汇聚到它\n";
+    std::cout << "  - 这在显示有循环引用或共享节点的图结构时非常有用\n";
+}
+
 int main() {
     std::cout << "=========================================\n";
     std::cout << "   MultiTree 多叉树使用示例\n";
@@ -364,6 +506,9 @@ int main() {
         example10_traverse();
         example11_cache();
         example12_memory_safety();
+        example13_print_tree();
+        example14_print_tree_horizontal();
+        example15_merge_nodes();
 
         std::cout << "\n所有示例执行完成！\n";
 
