@@ -15,14 +15,30 @@ from datetime import datetime
 
 
 class ModelTesterClient:
-    def __init__(self, arm_host, arm_port=9999):
+    def __init__(
+        self,
+        arm_host,
+        arm_port=9999,
+        golden=True,
+        repeat_count=None,
+        npu_cores=None,
+        peak_performance=None,
+    ):
         """
         初始化客户端
         :param arm_host: ARM开发板的IP地址
         :param arm_port: ARM开发板监听的端口
+        :param golden: 是否使用golden文件进行数据对比，默认True
+        :param repeat_count: 重复执行次数，默认None（使用服务器默认值）
+        :param npu_cores: NPU核心编号，默认None（使用服务器默认值）
+        :param peak_performance: 峰值性能，默认None（使用服务器默认值）
         """
         self.arm_host = arm_host
         self.arm_port = arm_port
+        self.golden = golden
+        self.repeat_count = repeat_count
+        self.npu_cores = npu_cores
+        self.peak_performance = peak_performance
         self.result_dir = Path("./test_results")
         self.result_dir.mkdir(exist_ok=True)
 
@@ -104,12 +120,15 @@ class ModelTesterClient:
             print(error_msg)
             return False, error_msg
 
-        # 检查golden文件夹
+        # 检查golden文件夹（仅当需要数据对比时）
         golden_dir = model_folder / "golden"
-        if not golden_dir.exists() or not golden_dir.is_dir():
-            error_msg = f"错误: 缺少 golden 文件夹"
-            print(error_msg)
-            return False, error_msg
+        golden_files = []
+        if self.golden:
+            if not golden_dir.exists() or not golden_dir.is_dir():
+                error_msg = f"错误: 缺少 golden 数据文件夹"
+                print(error_msg)
+                return False, error_msg
+            golden_files = [f for f in golden_dir.glob("*") if f.is_file()]
 
         try:
             # 连接到ARM开发板
@@ -119,18 +138,35 @@ class ModelTesterClient:
             sock.connect((self.arm_host, self.arm_port))
             print("连接成功!")
 
-            # 发送命令类型
-            command = json.dumps({"command": "run_model", "model_name": model_name})
-            command_bytes = command.encode("utf-8")
+            # 构建命令，包含可选参数
+            command = {
+                "command": "run_model",
+                "model_name": model_name,
+                "golden": self.golden,
+            }
+
+            # 添加可选参数
+            if self.repeat_count is not None:
+                command["repeat_count"] = self.repeat_count
+            if self.npu_cores is not None:
+                command["npu_cores"] = self.npu_cores
+            if self.peak_performance is not None:
+                command["peak_performance"] = self.peak_performance
+
+            # 发送命令
+            command_json = json.dumps(command)
+            command_bytes = command_json.encode("utf-8")
             sock.sendall(struct.pack("!I", len(command_bytes)))
             sock.sendall(command_bytes)
 
             # 发送文件数量（.bin, .param, golden文件夹下的所有文件）
-            golden_files = [f for f in golden_dir.glob("*") if f.is_file()]
             total_files = 2 + len(golden_files)
-            print(
-                f"准备发送 {total_files} 个文件 (.bin, .param, {len(golden_files)} 个golden文件)"
-            )
+            if self.golden:
+                print(
+                    f"准备发送 {total_files} 个文件 (.bin, .param, {len(golden_files)} 个golden文件)"
+                )
+            else:
+                print(f"准备发送 {total_files} 个文件 (.bin, .param)")
             sock.sendall(struct.pack("!I", total_files))
 
             # 发送.bin和.param文件
@@ -138,27 +174,28 @@ class ModelTesterClient:
             self.send_file(sock, bin_file)
             self.send_file(sock, param_file)
 
-            # 发送golden文件夹下的所有文件
-            print("发送golden文件...")
-            for golden_file in golden_files:
-                # 发送文件时带上golden前缀，让服务端知道放到golden子目录
-                file_path_rel = f"golden/{golden_file.name}"
-                file_size = os.path.getsize(golden_file)
+            # 发送golden文件夹下的所有文件（仅当golden=True时）
+            if self.golden and golden_files:
+                print("发送golden文件...")
+                for golden_file in golden_files:
+                    # 发送文件时带上golden前缀，让服务端知道放到golden子目录
+                    file_path_rel = f"golden/{golden_file.name}"
+                    file_size = os.path.getsize(golden_file)
 
-                file_name_bytes = file_path_rel.encode("utf-8")
-                sock.sendall(struct.pack("!I", len(file_name_bytes)))
-                sock.sendall(file_name_bytes)
-                sock.sendall(struct.pack("!Q", file_size))
+                    file_name_bytes = file_path_rel.encode("utf-8")
+                    sock.sendall(struct.pack("!I", len(file_name_bytes)))
+                    sock.sendall(file_name_bytes)
+                    sock.sendall(struct.pack("!Q", file_size))
 
-                with open(golden_file, "rb") as f:
-                    sent = 0
-                    while sent < file_size:
-                        chunk = f.read(8192)
-                        if not chunk:
-                            break
-                        sock.sendall(chunk)
-                        sent += len(chunk)
-                print(f"  已发送: golden/{golden_file.name} ({file_size} bytes)")
+                    with open(golden_file, "rb") as f:
+                        sent = 0
+                        while sent < file_size:
+                            chunk = f.read(8192)
+                            if not chunk:
+                                break
+                            sock.sendall(chunk)
+                            sent += len(chunk)
+                    print(f"  已发送: golden/{golden_file.name} ({file_size} bytes)")
 
             print("\n等待ARM开发板执行模型...")
 
@@ -373,10 +410,35 @@ def main():
         "--port", type=int, default=9999, help="ARM开发板监听的端口 (默认: 9999)"
     )
     parser.add_argument("--models-dir", required=True, help="模型根目录路径")
+    parser.add_argument(
+        "--no-golden",
+        action="store_true",
+        help="不使用golden文件进行数据对比（默认会使用）",
+    )
+    parser.add_argument(
+        "--repeat-count", type=int, help="重复执行次数（默认使用服务器默认值10）"
+    )
+    parser.add_argument(
+        "--npu-cores",
+        type=str,
+        help="NPU核心编号，例如: '0,1,2,3'（默认使用服务器默认值'0,1,2,3'）",
+    )
+    parser.add_argument(
+        "--peak-performance",
+        type=float,
+        help="峰值性能，例如: 4.0（默认使用服务器默认值4.0）",
+    )
 
     args = parser.parse_args()
 
-    client = ModelTesterClient(args.host, args.port)
+    client = ModelTesterClient(
+        args.host,
+        args.port,
+        golden=not args.no_golden,
+        repeat_count=args.repeat_count,
+        npu_cores=args.npu_cores,
+        peak_performance=args.peak_performance,
+    )
     client.run_all_models(args.models_dir)
 
 

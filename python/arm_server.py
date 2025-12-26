@@ -103,53 +103,15 @@ class ModelTesterServer:
         conn.sendall(struct.pack("!I", len(msg_bytes)))
         conn.sendall(msg_bytes)
 
-    def run_model(
-        self,
-        model_name,
-        model_path,
-        repeat_count=10,
-        npu_cores="0,1,2,3",
-        peak_performance=4.0,
-    ):
+    def run_model(self, model_path, cmd_args):
         """
         运行模型
-        :param model_name: 模型名称
         :param model_path: 模型路径
-        :param repeat_count: 重复执行次数，默认10
-        :param npu_cores: NPU核心编号，默认'0,1,2,3'
-        :param peak_performance: 峰值性能，默认4.0
+        :param cmd_args: 已解析的命令行参数列表
         :return: 执行结果字符串
         """
-        golden_path = model_path / "golden"
-
-        # 模型文件路径（不带扩展名）
-        model_file_base = model_path / model_name
-
-        # 检查模型文件是否存在
-        bin_file = Path(str(model_file_base) + ".bin")
-        param_file = Path(str(model_file_base) + ".param")
-
-        if not bin_file.exists():
-            return f"错误: 模型文件不存在: {bin_file}"
-        if not param_file.exists():
-            return f"错误: 参数文件不存在: {param_file}"
-        if not golden_path.exists():
-            return f"错误: Golden目录不存在: {golden_path}"
-
-        # 构建命令
-        cmd = [
-            self.runner_path,
-            "-m",
-            str(model_file_base),
-            "-g",
-            str(golden_path),
-            "-r",
-            str(repeat_count),
-            "-n",
-            str(npu_cores),
-            "--peak_performance",
-            str(peak_performance),
-        ]
+        # 构建完整命令
+        cmd = [self.runner_path] + cmd_args
 
         print(f"\n执行命令: {' '.join(cmd)}")
         print(f"工作目录: {model_path}")
@@ -209,6 +171,52 @@ class ModelTesterServer:
             print(f"清理模型文件失败: {e}")
             return False
         return False
+
+    def parse_command_args(self, command, model_path, model_name):
+        """
+        解析命令行参数
+        :param command: 从客户端接收的命令字典
+        :param model_path: 模型路径
+        :param model_name: 模型名称
+        :return: (success, cmd_args or error_msg)
+        """
+        model_file_base = model_path / model_name
+
+        # 检查模型文件是否存在
+        bin_file = Path(str(model_file_base) + ".bin")
+        param_file = Path(str(model_file_base) + ".param")
+
+        if not bin_file.exists():
+            return False, f"错误: 模型文件不存在: {bin_file}"
+        if not param_file.exists():
+            return False, f"错误: 参数文件不存在: {param_file}"
+
+        # 构建命令行参数列表
+        cmd_args = []
+
+        # -m 参数（必需）
+        cmd_args.extend(["-m", str(model_file_base)])
+
+        # -g 参数（可选，用于数据对比）
+        if "golden" in command and command["golden"]:
+            golden_path = model_path / "golden"
+            if not golden_path.exists():
+                return False, f"错误: Golden目录不存在: {golden_path}"
+            cmd_args.extend(["-g", str(golden_path)])
+
+        # -r 参数（可选）
+        if "repeat_count" in command:
+            cmd_args.extend(["-r", str(command["repeat_count"])])
+
+        # -n 参数（可选）
+        if "npu_cores" in command:
+            cmd_args.extend(["-n", str(command["npu_cores"])])
+
+        # --peak_performance 参数（可选）
+        if "peak_performance" in command:
+            cmd_args.extend(["--peak_performance", str(command["peak_performance"])])
+
+        return True, cmd_args
 
     def handle_client(self, conn, addr):
         """处理客户端连接"""
@@ -270,19 +278,22 @@ class ModelTesterServer:
 
             print(f"\n所有文件接收完成!")
 
-            # 从命令中提取可选的运行参数
-            repeat_count = command.get("repeat_count", 10)
-            npu_cores = command.get("npu_cores", "0,1,2,3")
-            peak_performance = command.get("peak_performance", 4.0)
-
-            print(
-                f"运行参数: repeat={repeat_count}, npu_cores={npu_cores}, peak_performance={peak_performance}"
+            # 解析命令行参数
+            success, result_data = self.parse_command_args(
+                command, model_path, model_name
             )
+            if not success:
+                error_msg = result_data
+                print(error_msg)
+                self.send_message(conn, error_msg)
+                self.cleanup_model(model_path)
+                return
+
+            cmd_args = result_data
+            print(f"解析的命令行参数: {cmd_args}")
 
             # 运行模型
-            result = self.run_model(
-                model_name, model_path, repeat_count, npu_cores, peak_performance
-            )
+            result = self.run_model(model_path, cmd_args)
 
             # 发送结果
             print(f"\n发送执行结果给客户端...")
