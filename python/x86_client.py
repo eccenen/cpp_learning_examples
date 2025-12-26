@@ -171,7 +171,11 @@ class ModelTesterClient:
                 print("-" * 60)
                 print(result)
                 print("-" * 60)
-                return True, result
+                # 检查实际执行结果是否成功
+                success = self.check_result_success(result)
+                if not success:
+                    print("\n⚠️  注意: 模型执行失败（返回码非0）")
+                return success, result
             else:
                 error_msg = "错误: 未收到执行结果"
                 print(error_msg)
@@ -197,6 +201,41 @@ class ModelTesterClient:
                 sock.close()
             except:
                 pass
+    
+    def check_result_success(self, result):
+        """检查模型执行结果是否成功"""
+        # 检查是否包含返回码
+        if '=== 返回码:' in result:
+            # 提取返回码
+            try:
+                returncode_line = [line for line in result.split('\n') if '=== 返回码:' in line][0]
+                returncode_str = returncode_line.split(':')[1].strip().split()[0]
+                returncode = int(returncode_str)
+                return returncode == 0
+            except (IndexError, ValueError) as e:
+                print(f"警告: 无法解析返回码，默认为失败: {e}")
+                return False
+        # 如果没有返回码信息，检查是否包含"执行成功"标记
+        elif '执行成功!' in result:
+            return True
+        elif '执行失败!' in result:
+            return False
+        else:
+            # 如果都没有，检查是否有错误信息
+            if '错误:' in result or 'ERROR' in result or '[ERROR]' in result:
+                return False
+            # 默认情况下，如果收到了结果就认为成功（兼容旧版本）
+            return True
+    
+    def filter_result(self, result):
+        """过滤结果，仅保留Performance及之后的内容"""
+        if 'Performance:' in result:
+            # 找到Performance的位置
+            perf_index = result.find('Performance:')
+            return result[perf_index:]
+        else:
+            # 如果没有Performance，返回所有内容
+            return result
     
     def save_result(self, model_name, success, result):
         """保存测试结果到文件"""
@@ -244,23 +283,61 @@ class ModelTesterClient:
         
         results = []
         
+        # 先写入详细结果文件的头部信息，然后保持文件打开以便实时追加
+        with open(detailed_file, 'w', encoding='utf-8') as f:
+            f.write(f"{'='*80}\n")
+            f.write(f"所有模型详细测试结果\n")
+            f.write(f"{'='*80}\n")
+            f.write(f"测试开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"总计模型数: {len(model_folders)}\n")
+            f.write(f"{'='*80}\n\n\n")
+        
         for i, model_folder in enumerate(model_folders, 1):
             print(f"\n\n[{i}/{len(model_folders)}] 处理模型文件夹: {model_folder.name}")
             
             success, result = self.test_model(model_folder)
+            
+            # 过滤结果，只保留Performance及之后的内容
+            filtered_result = self.filter_result(result)
+            
             results.append({
                 'model_name': model_folder.name,
                 'success': success,
-                'result': result
+                'result': filtered_result
             })
             
-            # 保存单个模型结果
-            self.save_result(model_folder.name, success, result)
+            # 实时追加写入详细结果到文件
+            with open(detailed_file, 'a', encoding='utf-8') as f:
+                f.write(f"\n\n{'#'*80}\n")
+                f.write(f"# 模型 {i}/{len(model_folders)}: {model_folder.name}\n")
+                f.write(f"{'#'*80}\n\n")
+                f.write(f"模型名称: {model_folder.name}\n")
+                f.write(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"测试结果: {'✓ 成功' if success else '✗ 失败'}\n")
+                f.write(f"\n{'-'*80}\n")
+                f.write(f"执行输出:\n")
+                f.write(f"{'-'*80}\n")
+                f.write(filtered_result)
+                f.write(f"\n{'-'*80}\n")
+                f.flush()  # 立即刷新到磁盘
+            
+            print(f"结果已实时写入: {detailed_file}")
             
             # 等待一下再处理下一个模型
             if i < len(model_folders):
                 print("\n等待3秒后处理下一个模型...")
                 time.sleep(3)
+        
+        # 在详细结果文件末尾追加汇总信息
+        with open(detailed_file, 'a', encoding='utf-8') as f:
+            f.write(f"\n\n\n{'='*80}\n")
+            f.write(f"测试完成汇总\n")
+            f.write(f"{'='*80}\n")
+            f.write(f"测试结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"总计模型数: {len(results)}\n")
+            f.write(f"成功: {sum(1 for r in results if r['success'])}\n")
+            f.write(f"失败: {sum(1 for r in results if not r['success'])}\n")
+            f.write(f"{'='*80}\n")
         
         # 保存汇总结果
         with open(summary_file, 'w', encoding='utf-8') as f:
@@ -273,29 +350,6 @@ class ModelTesterClient:
             
             for i, result in enumerate(results, 1):
                 f.write(f"{i}. {result['model_name']}: {'✓ 成功' if result['success'] else '✗ 失败'}\n")
-        
-        # 保存所有模型的详细结果到一个文件
-        with open(detailed_file, 'w', encoding='utf-8') as f:
-            f.write(f"{'='*80}\n")
-            f.write(f"所有模型详细测试结果\n")
-            f.write(f"{'='*80}\n")
-            f.write(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"总计模型数: {len(results)}\n")
-            f.write(f"成功: {sum(1 for r in results if r['success'])}\n")
-            f.write(f"失败: {sum(1 for r in results if not r['success'])}\n")
-            f.write(f"{'='*80}\n\n\n")
-            
-            for i, result in enumerate(results, 1):
-                f.write(f"\n\n{'#'*80}\n")
-                f.write(f"# 模型 {i}/{len(results)}: {result['model_name']}\n")
-                f.write(f"{'#'*80}\n\n")
-                f.write(f"模型名称: {result['model_name']}\n")
-                f.write(f"测试结果: {'✓ 成功' if result['success'] else '✗ 失败'}\n")
-                f.write(f"\n{'-'*80}\n")
-                f.write(f"执行输出:\n")
-                f.write(f"{'-'*80}\n")
-                f.write(result['result'])
-                f.write(f"\n{'-'*80}\n")
         
         print(f"\n\n{'='*80}")
         print(f"所有模型测试完成!")

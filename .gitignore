@@ -43,3 +43,7 @@
 .cache/
 build*/
 log*/
+
+__pycache__/
+*.pyc
+*.pyo
