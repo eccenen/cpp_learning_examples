@@ -1,0 +1,44 @@
+# Clangd configuration for OpenMP support with LLVM 21.1.4
+CompileFlags:
+  # Ensure compile_commands.json is used
+  CompilationDatabase: build
+  
+  # Add OpenMP flags
+  Add:
+    - -fopenmp
+    - -I/home/eccenen/software/llvm/LLVM-21.1.4-Linux-X64/include
+
+# Diagnostics configuration
+Diagnostics:
+  ClangTidy:
+    # Enable OpenMP-related checks
+    Add:
+      - openmp-*
+      - bugprone-*
+      - performance-*
+  UnusedIncludes: Strict
+  
+# Suppress warnings that might be noise
+  Suppress:
+    - "unused-parameter"
+    - "missing-prototypes"
+
+# InlayHints configuration
+InlayHints:
+  Enabled: Yes
+  ParameterNames: Yes
+  DeducedTypes: Yes
+  Designators: Yes
+
+# Index configuration for better navigation
+Index:
+  Background: Build
+
+# Hover configuration
+Hover:
+  ShowAKA: Yes
+
+# Completion configuration  
+Completion:
+  AllScopes: Yes
+
