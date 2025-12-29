@@ -191,30 +191,21 @@ class ModelTesterServer:
         if not param_file.exists():
             return False, f"错误: 参数文件不存在: {param_file}"
 
-        # 构建命令行参数列表
-        cmd_args = []
+        # 构建命令行参数列表：-m 参数（必需）
+        cmd_args = ["-m", str(model_file_base)]
 
-        # -m 参数（必需）
-        cmd_args.extend(["-m", str(model_file_base)])
-
-        # -g 参数（可选，用于数据对比）
-        if "golden" in command and command["golden"]:
+        # 处理 golden 参数（-g）
+        if command.get("use_golden"):
             golden_path = model_path / "golden"
             if not golden_path.exists():
                 return False, f"错误: Golden目录不存在: {golden_path}"
             cmd_args.extend(["-g", str(golden_path)])
 
-        # -r 参数（可选）
-        if "repeat_count" in command:
-            cmd_args.extend(["-r", str(command["repeat_count"])])
-
-        # -n 参数（可选）
-        if "npu_cores" in command:
-            cmd_args.extend(["-n", str(command["npu_cores"])])
-
-        # --peak_performance 参数（可选）
-        if "peak_performance" in command:
-            cmd_args.extend(["--peak_performance", str(command["peak_performance"])])
+        # 直接追加客户端传来的 runner_args（已经是 npu_runner 格式）
+        runner_args = command.get("runner_args", [])
+        if runner_args:
+            cmd_args.extend(runner_args)
+            print(f"  追加客户端参数: {runner_args}")
 
         return True, cmd_args
 

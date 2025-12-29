@@ -12,33 +12,30 @@ import struct
 import time
 from pathlib import Path
 from datetime import datetime
+import re
+from typing import Dict, List, Optional
+
+try:
+    import pandas as pd
+
+    HAS_PANDAS = True
+except ImportError:
+    HAS_PANDAS = False
 
 
 class ModelTesterClient:
-    def __init__(
-        self,
-        arm_host,
-        arm_port=9999,
-        golden=True,
-        repeat_count=None,
-        npu_cores=None,
-        peak_performance=None,
-    ):
+    def __init__(self, arm_host, arm_port=9999, runner_args=None, use_golden=True):
         """
         初始化客户端
         :param arm_host: ARM开发板的IP地址
         :param arm_port: ARM开发板监听的端口
-        :param golden: 是否使用golden文件进行数据对比，默认True
-        :param repeat_count: 重复执行次数，默认None（使用服务器默认值）
-        :param npu_cores: NPU核心编号，默认None（使用服务器默认值）
-        :param peak_performance: 峰值性能，默认None（使用服务器默认值）
+        :param runner_args: npu_runner 的命令行参数列表，例如: ["-r", "20", "-n", "0,1"]
+        :param use_golden: 是否使用 golden 数据对比
         """
         self.arm_host = arm_host
         self.arm_port = arm_port
-        self.golden = golden
-        self.repeat_count = repeat_count
-        self.npu_cores = npu_cores
-        self.peak_performance = peak_performance
+        self.runner_args = runner_args or []
+        self.use_golden = use_golden
         self.result_dir = Path("./test_results")
         self.result_dir.mkdir(exist_ok=True)
 
@@ -123,7 +120,7 @@ class ModelTesterClient:
         # 检查golden文件夹（仅当需要数据对比时）
         golden_dir = model_folder / "golden"
         golden_files = []
-        if self.golden:
+        if self.use_golden:
             if not golden_dir.exists() or not golden_dir.is_dir():
                 error_msg = f"错误: 缺少 golden 数据文件夹"
                 print(error_msg)
@@ -138,20 +135,13 @@ class ModelTesterClient:
             sock.connect((self.arm_host, self.arm_port))
             print("连接成功!")
 
-            # 构建命令，包含可选参数
+            # 构建命令，直接传递 npu_runner 的参数
             command = {
                 "command": "run_model",
                 "model_name": model_name,
-                "golden": self.golden,
+                "use_golden": self.use_golden,
+                "runner_args": self.runner_args,  # 直接传递命令行参数列表
             }
-
-            # 添加可选参数
-            if self.repeat_count is not None:
-                command["repeat_count"] = self.repeat_count
-            if self.npu_cores is not None:
-                command["npu_cores"] = self.npu_cores
-            if self.peak_performance is not None:
-                command["peak_performance"] = self.peak_performance
 
             # 发送命令
             command_json = json.dumps(command)
@@ -161,12 +151,12 @@ class ModelTesterClient:
 
             # 发送文件数量（.bin, .param, golden文件夹下的所有文件）
             total_files = 2 + len(golden_files)
-            if self.golden:
+            if self.use_golden and golden_files:
                 print(
                     f"准备发送 {total_files} 个文件 (.bin, .param, {len(golden_files)} 个golden文件)"
                 )
             else:
-                print(f"准备发送 {total_files} 个文件 (.bin, .param)")
+                print(f"准备发送 2 个文件 (.bin, .param)")
             sock.sendall(struct.pack("!I", total_files))
 
             # 发送.bin和.param文件
@@ -174,8 +164,8 @@ class ModelTesterClient:
             self.send_file(sock, bin_file)
             self.send_file(sock, param_file)
 
-            # 发送golden文件夹下的所有文件（仅当golden=True时）
-            if self.golden and golden_files:
+            # 发送golden文件夹下的所有文件（仅当use_golden=True时）
+            if self.use_golden and golden_files:
                 print("发送golden文件...")
                 for golden_file in golden_files:
                     # 发送文件时带上golden前缀，让服务端知道放到golden子目录
@@ -275,6 +265,149 @@ class ModelTesterClient:
         else:
             # 如果没有Performance，返回所有内容
             return result
+
+    def parse_and_export_results(
+        self, input_file: str, output_prefix: str = None
+    ) -> bool:
+        """
+        Parse NPU test results file and generate Markdown/CSV files.
+
+        Args:
+            input_file: Path to the input results file
+            output_prefix: Output file prefix (without extension), defaults to input filename
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not HAS_PANDAS:
+            print("Warning: pandas not installed, skipping result parsing")
+            return False
+
+        input_path = Path(input_file)
+        if not input_path.exists():
+            print(f"Error: Input file not found: {input_file}")
+            return False
+
+        # Set output prefix
+        if output_prefix is None:
+            output_prefix = str(input_path.with_suffix(""))
+
+        output_md = f"{output_prefix}.md"
+        output_csv = f"{output_prefix}.csv"
+
+        print(f"Reading file: {input_file}")
+        with open(input_file, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        print("Parsing test results...")
+
+        # --- Parse model blocks ---
+        results = []
+        model_blocks = re.split(r"#{20,}\n# 模型 \d+/\d+:", content)
+
+        for block in model_blocks[1:]:  # Skip first empty block
+            # Extract model name
+            model_match = re.search(r"模型名称:\s*(\S+)", block)
+            if not model_match:
+                continue
+            model_name = model_match.group(1)
+
+            # Check if test succeeded
+            if "✓ 成功" not in block:
+                continue
+
+            parsed = {"model_name": model_name}
+
+            # Keys to extract for each core
+            each_core_keys = [
+                ("Graph average time", "graph_latency_core"),
+                ("Npu average time", "npu_latency_core"),
+                ("Npu mem used", "npu_mem"),
+                ("Cpu mem used", "cpu_mem"),
+                ("Total mem used", "total_mem"),
+                ("Npu MAC Utilization", "npu_mac_core"),
+                ("ops", "ops"),
+                ("params", "params"),
+            ]
+
+            # Keys for all cores combined
+            all_core_keys = [
+                ("Npu total FPS", "npu_total_fps"),
+                ("Graph total FPS", "graph_total_fps"),
+            ]
+
+            # Split by core blocks
+            core_blocks = re.split(r"Npu core:\s*(\d+|All)", block)
+
+            for i in range(1, len(core_blocks), 2):
+                core_id = core_blocks[i]
+                core_data = core_blocks[i + 1]
+
+                if core_id == "All":
+                    for key, col_name in all_core_keys:
+                        pattern = rf"{re.escape(key)}:\s*(\S+)"
+                        match = re.search(pattern, core_data)
+                        if match:
+                            parsed[col_name] = float(match.group(1))
+                else:
+                    for key, col_name in each_core_keys:
+                        pattern = rf"{re.escape(key)}:\s*(\S+)"
+                        match = re.search(pattern, core_data)
+                        if match:
+                            if col_name in [
+                                "npu_mem",
+                                "cpu_mem",
+                                "total_mem",
+                                "ops",
+                                "params",
+                            ]:
+                                parsed[col_name] = match.group(1)
+                            else:
+                                parsed[f"{col_name}{core_id}"] = match.group(1)
+
+            results.append(parsed)
+
+        print(f"Successfully parsed {len(results)} model results")
+
+        if not results:
+            print("Warning: No valid test results found")
+            return False
+
+        # --- Create DataFrame with ordered columns ---
+        df = pd.DataFrame(results)
+        core_numbers = sum(col.startswith("graph_latency_core") for col in df.columns)
+
+        ordered_columns = [
+            "model_name",
+            "npu_mem",
+            "cpu_mem",
+            "total_mem",
+            "graph_total_fps",
+            "npu_total_fps",
+        ]
+
+        for core in range(core_numbers):
+            ordered_columns.append(f"graph_latency_core{core}")
+        for core in range(core_numbers):
+            ordered_columns.append(f"npu_latency_core{core}")
+        for core in range(core_numbers):
+            ordered_columns.append(f"npu_mac_core{core}")
+
+        ordered_columns.extend(["ops", "params"])
+        final_columns = [col for col in ordered_columns if col in df.columns]
+        df = df[final_columns]
+
+        print(f"DataFrame shape: {df.shape}")
+
+        # --- Write output files ---
+        with open(output_md, "w", encoding="utf-8") as f:
+            f.write(df.to_markdown(index=False))
+        print(f"✓ Markdown file saved: {output_md}")
+
+        df.to_csv(output_csv, index=False, encoding="utf-8")
+        print(f"✓ CSV file saved: {output_csv}")
+
+        return True
 
     def save_result(self, model_name, success, result):
         """保存测试结果到文件"""
@@ -394,6 +527,10 @@ class ModelTesterClient:
                     f"{i}. {result['model_name']}: {'✓ 成功' if result['success'] else '✗ 失败'}\n"
                 )
 
+        self.parse_and_export_results(
+            str(detailed_file), str(self.result_dir / f"results_{timestamp}")
+        )
+
         print(f"\n\n{'='*80}")
         print(f"所有模型测试完成!")
         print(f"汇总报告已保存到: {summary_file}")
@@ -431,13 +568,20 @@ def main():
 
     args = parser.parse_args()
 
+    # 直接构建 npu_runner 的命令行参数列表
+    runner_args = []
+    if args.repeat_count is not None:
+        runner_args.extend(["-r", str(args.repeat_count)])
+    if args.npu_cores is not None:
+        runner_args.extend(["-n", args.npu_cores])
+    if args.peak_performance is not None:
+        runner_args.extend(["--peak_performance", str(args.peak_performance)])
+
     client = ModelTesterClient(
         args.host,
         args.port,
-        golden=not args.no_golden,
-        repeat_count=args.repeat_count,
-        npu_cores=args.npu_cores,
-        peak_performance=args.peak_performance,
+        runner_args=runner_args,
+        use_golden=not args.no_golden,
     )
     client.run_all_models(args.models_dir)
 
