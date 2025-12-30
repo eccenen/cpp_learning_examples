@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-x86端客户端脚本
-功能：扫描模型文件夹，将模型文件传输到ARM开发板，触发执行，收集结果
+x86 Client Script
+Functions: Scan model folders, transfer model files to ARM board, trigger execution, collect results
 """
 
 import os
@@ -24,35 +24,43 @@ except ImportError:
 
 
 class ModelTesterClient:
-    def __init__(self, arm_host, arm_port=9999, runner_args=None, use_golden=True):
+    def __init__(
+        self,
+        arm_host,
+        arm_port=9999,
+        runner_args=None,
+        use_golden=False,
+        execution_times=-1,
+    ):
         """
-        初始化客户端
-        :param arm_host: ARM开发板的IP地址
-        :param arm_port: ARM开发板监听的端口
-        :param runner_args: npu_runner 的命令行参数列表，例如: ["-r", "20", "-n", "0,1"]
-        :param use_golden: 是否使用 golden 数据对比
+        Initialize client
+        :param arm_host: ARM board IP address
+        :param arm_port: ARM board listening port
+        :param runner_args: npu_runner command line arguments list, e.g.: ["-r", "10", "-n", "0,1"]
+        :param use_golden: Whether to use golden data comparison
         """
         self.arm_host = arm_host
         self.arm_port = arm_port
         self.runner_args = runner_args or []
         self.use_golden = use_golden
-        self.result_dir = Path("./test_results")
+        self.execution_times = execution_times
+        self.result_dir = Path(__file__).resolve().parent / "test_results"
         self.result_dir.mkdir(exist_ok=True)
 
     def send_file(self, sock, file_path):
-        """通过socket发送文件"""
+        """Send file via socket"""
         file_size = os.path.getsize(file_path)
         file_name = os.path.basename(file_path)
 
-        # 发送文件名长度和文件名
+        # Send filename length and filename
         file_name_bytes = file_name.encode("utf-8")
         sock.sendall(struct.pack("!I", len(file_name_bytes)))
         sock.sendall(file_name_bytes)
 
-        # 发送文件大小
+        # Send file size
         sock.sendall(struct.pack("!Q", file_size))
 
-        # 发送文件内容
+        # Send file content
         with open(file_path, "rb") as f:
             sent = 0
             while sent < file_size:
@@ -62,17 +70,17 @@ class ModelTesterClient:
                 sock.sendall(chunk)
                 sent += len(chunk)
 
-        print(f"  已发送: {file_name} ({file_size} bytes)")
+        print(f"  Sent: {file_name} ({file_size} bytes)")
 
     def receive_message(self, sock):
-        """接收消息"""
-        # 接收消息长度
+        """Receive message"""
+        # Receive message length
         length_data = self.recv_exact(sock, 4)
         if not length_data:
             return None
         msg_length = struct.unpack("!I", length_data)[0]
 
-        # 接收消息内容
+        # Receive message content
         msg_data = self.recv_exact(sock, msg_length)
         if not msg_data:
             return None
@@ -80,7 +88,7 @@ class ModelTesterClient:
         return msg_data.decode("utf-8")
 
     def recv_exact(self, sock, size):
-        """精确接收指定字节数"""
+        """Receive exact number of bytes"""
         data = b""
         while len(data) < size:
             chunk = sock.recv(size - len(data))
@@ -91,18 +99,18 @@ class ModelTesterClient:
 
     def test_model(self, model_folder_path):
         """
-        测试单个模型
-        :param model_folder_path: 模型文件夹路径
+        Test a single model
+        :param model_folder_path: Model folder path
         :return: (success, result_message)
         """
         model_folder = Path(model_folder_path)
         model_name = model_folder.name
 
         print(f"\n{'='*60}")
-        print(f"开始测试模型: {model_name}")
+        print(f"Testing model: {model_name}")
         print(f"{'='*60}")
 
-        # 查找.bin和.param文件
+        # Find .bin and .param files
         bin_file = None
         param_file = None
 
@@ -113,62 +121,63 @@ class ModelTesterClient:
                 param_file = file
 
         if not bin_file or not param_file:
-            error_msg = f"错误: 模型文件不完整，缺少 .bin 或 .param 文件"
+            error_msg = f"Error: Model files incomplete, missing .bin or .param file"
             print(error_msg)
             return False, error_msg
 
-        # 检查golden文件夹（仅当需要数据对比时）
+        # Check golden folder (only when data comparison is needed)
         golden_dir = model_folder / "golden"
         golden_files = []
         if self.use_golden:
             if not golden_dir.exists() or not golden_dir.is_dir():
-                error_msg = f"错误: 缺少 golden 数据文件夹"
+                error_msg = f"Error: Missing golden data folder"
                 print(error_msg)
                 return False, error_msg
             golden_files = [f for f in golden_dir.glob("*") if f.is_file()]
 
         try:
-            # 连接到ARM开发板
-            print(f"连接到ARM开发板 {self.arm_host}:{self.arm_port}...")
+            # Connect to ARM board
+            print(f"Connecting to ARM board {self.arm_host}:{self.arm_port}...")
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(300)  # 5分钟超时
+            sock.settimeout(300)  # 5 minute timeout
             sock.connect((self.arm_host, self.arm_port))
-            print("连接成功!")
+            print("Connected!")
 
-            # 构建命令，直接传递 npu_runner 的参数
+            # Build command with npu_runner args
             command = {
                 "command": "run_model",
                 "model_name": model_name,
                 "use_golden": self.use_golden,
-                "runner_args": self.runner_args,  # 直接传递命令行参数列表
+                "execution_times": self.execution_times,
+                "runner_args": self.runner_args,  # Pass command line args directly
             }
 
-            # 发送命令
+            # Send command
             command_json = json.dumps(command)
             command_bytes = command_json.encode("utf-8")
             sock.sendall(struct.pack("!I", len(command_bytes)))
             sock.sendall(command_bytes)
 
-            # 发送文件数量（.bin, .param, golden文件夹下的所有文件）
+            # Send file count (.bin, .param, all files in golden folder)
             total_files = 2 + len(golden_files)
             if self.use_golden and golden_files:
                 print(
-                    f"准备发送 {total_files} 个文件 (.bin, .param, {len(golden_files)} 个golden文件)"
+                    f"Preparing to send {total_files} files (.bin, .param, {len(golden_files)} golden files)"
                 )
             else:
-                print(f"准备发送 2 个文件 (.bin, .param)")
+                print(f"Preparing to send 2 files (.bin, .param)")
             sock.sendall(struct.pack("!I", total_files))
 
-            # 发送.bin和.param文件
-            print("发送模型文件...")
+            # Send .bin and .param files
+            print("Sending model files...")
             self.send_file(sock, bin_file)
             self.send_file(sock, param_file)
 
-            # 发送golden文件夹下的所有文件（仅当use_golden=True时）
+            # Send all files in golden folder (only when use_golden=True)
             if self.use_golden and golden_files:
-                print("发送golden文件...")
+                print("Sending golden files...")
                 for golden_file in golden_files:
-                    # 发送文件时带上golden前缀，让服务端知道放到golden子目录
+                    # Send file with golden prefix so server knows to put it in golden subdirectory
                     file_path_rel = f"golden/{golden_file.name}"
                     file_size = os.path.getsize(golden_file)
 
@@ -185,85 +194,85 @@ class ModelTesterClient:
                                 break
                             sock.sendall(chunk)
                             sent += len(chunk)
-                    print(f"  已发送: golden/{golden_file.name} ({file_size} bytes)")
+                    print(f"  Sent: golden/{golden_file.name} ({file_size} bytes)")
 
-            print("\n等待ARM开发板执行模型...")
+            print("\nWaiting for ARM board to execute model...")
 
-            # 接收执行结果
+            # Receive execution result
             result = self.receive_message(sock)
 
             if result:
-                print("\n收到执行结果:")
+                print("\nReceived execution result:")
                 print("-" * 60)
                 print(result)
                 print("-" * 60)
-                # 检查实际执行结果是否成功
+                # Check if execution was successful
                 success = self.check_result_success(result)
                 if not success:
-                    print("\n⚠️  注意: 模型执行失败（返回码非0）")
+                    print("\nWarning: Model execution failed (non-zero return code)")
                 return success, result
             else:
-                error_msg = "错误: 未收到执行结果"
+                error_msg = "Error: No execution result received"
                 print(error_msg)
                 return False, error_msg
 
         except socket.timeout:
-            error_msg = "错误: 连接超时"
+            error_msg = "Error: Connection timeout"
             print(error_msg)
             return False, error_msg
         except ConnectionRefusedError:
-            error_msg = f"错误: 无法连接到ARM开发板 {self.arm_host}:{self.arm_port}，请确认服务器已启动"
+            error_msg = f"Error: Cannot connect to ARM board {self.arm_host}:{self.arm_port}, please confirm server is running"
             print(error_msg)
             return False, error_msg
         except Exception as e:
-            error_msg = f"错误: {str(e)}"
+            error_msg = f"Error: {str(e)}"
             print(error_msg)
             import traceback
 
             traceback.print_exc()
             return False, error_msg
         finally:
-            # 确保socket被关闭
+            # Ensure socket is closed
             try:
                 sock.close()
             except:
                 pass
 
     def check_result_success(self, result):
-        """检查模型执行结果是否成功"""
-        # 检查是否包含返回码
-        if "=== 返回码:" in result:
-            # 提取返回码
+        """Check if model execution result is successful"""
+        # Check if return code is present
+        if "=== Return code:" in result:
+            # Extract return code
             try:
                 returncode_line = [
-                    line for line in result.split("\n") if "=== 返回码:" in line
+                    line for line in result.split("\n") if "=== Return code:" in line
                 ][0]
                 returncode_str = returncode_line.split(":")[1].strip().split()[0]
                 returncode = int(returncode_str)
                 return returncode == 0
             except (IndexError, ValueError) as e:
-                print(f"警告: 无法解析返回码，默认为失败: {e}")
+                print(f"Warning: Cannot parse return code, defaulting to failure: {e}")
                 return False
-        # 如果没有返回码信息，检查是否包含"执行成功"标记
-        elif "执行成功!" in result:
+        # If no return code info, check for success marker
+        elif "Execution successful!" in result:
             return True
-        elif "执行失败!" in result:
+        elif "Execution failed!" in result:
             return False
         else:
-            # 如果都没有，检查是否有错误信息
-            if "错误:" in result or "ERROR" in result or "[ERROR]" in result:
+            # If neither, check for error messages
+            if "Error:" in result or "ERROR" in result or "[ERROR]" in result:
                 return False
-            # 默认情况下，如果收到了结果就认为成功（兼容旧版本）
+            # Default: if result received, consider success (for backward compatibility)
             return True
 
     def filter_result(self, result):
-        """过滤结果，仅保留Performance及之后的内容"""
+        """Filter result, keep only content from Performance onwards"""
         if "Performance:" in result:
-            # 找到Performance的位置
+            # Find Performance position
             perf_index = result.find("Performance:")
             return result[perf_index:]
         else:
-            # 如果没有Performance，返回所有内容
+            # If no Performance, return all content
             return result
 
     def parse_and_export_results(
@@ -303,17 +312,17 @@ class ModelTesterClient:
 
         # --- Parse model blocks ---
         results = []
-        model_blocks = re.split(r"#{20,}\n# 模型 \d+/\d+:", content)
+        model_blocks = re.split(r"#{20,}\n# Model \d+/\d+:", content)
 
         for block in model_blocks[1:]:  # Skip first empty block
             # Extract model name
-            model_match = re.search(r"模型名称:\s*(\S+)", block)
+            model_match = re.search(r"Model name:\s*(\S+)", block)
             if not model_match:
                 continue
             model_name = model_match.group(1)
 
             # Check if test succeeded
-            if "✓ 成功" not in block:
+            if "[PASS]" not in block:
                 continue
 
             parsed = {"model_name": model_name}
@@ -402,74 +411,94 @@ class ModelTesterClient:
         # --- Write output files ---
         with open(output_md, "w", encoding="utf-8") as f:
             f.write(df.to_markdown(index=False))
-        print(f"✓ Markdown file saved: {output_md}")
+        print(f"Markdown file saved: {output_md}")
 
         df.to_csv(output_csv, index=False, encoding="utf-8")
-        print(f"✓ CSV file saved: {output_csv}")
+        print(f"CSV file saved: {output_csv}")
 
         return True
 
     def save_result(self, model_name, success, result):
-        """保存测试结果到文件"""
+        """Save test result to file"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         result_file = self.result_dir / f"{model_name}_{timestamp}.txt"
 
         with open(result_file, "w", encoding="utf-8") as f:
-            f.write(f"模型名称: {model_name}\n")
-            f.write(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"测试结果: {'成功' if success else '失败'}\n")
+            f.write(f"Model name: {model_name}\n")
+            f.write(f"Test time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Test result: {'PASS' if success else 'FAIL'}\n")
             f.write(f"\n{'='*60}\n")
-            f.write("执行输出:\n")
+            f.write("Execution output:\n")
             f.write(f"{'='*60}\n")
             f.write(result)
 
-        print(f"\n结果已保存到: {result_file}")
+        print(f"\nResult saved to: {result_file}")
 
-    def run_all_models(self, models_root_dir):
+    def run_all_models(self, models_root_dir, model_list: str):
         """
-        运行所有模型测试
-        :param models_root_dir: 模型根目录路径
+        Run all model tests
+        :param models_root_dir: Root directory path for models
+        :param model_list: Comma-separated list of model names to test
         """
         models_root = Path(models_root_dir)
+        model_names_list = (
+            [name.strip() for name in model_list.split(",")] if model_list else []
+        )
 
         if not models_root.exists():
-            print(f"错误: 路径不存在: {models_root}")
+            print(f"Error: Path does not exist: {models_root}")
             return
 
-        # 获取所有子文件夹
+        # Get all subdirectories
         model_folders = [d for d in models_root.iterdir() if d.is_dir()]
 
+        # Filter by model list if provided
+        if model_names_list:
+            model_folders = [d for d in model_folders if d.name in model_names_list]
+
+            # Check if any specified models were not found
+            found_models = {d.name for d in model_folders}
+            missing_models = set(model_names_list) - found_models
+            if missing_models:
+                print(
+                    f"Warning: The following specified models were not found: {', '.join(missing_models)}"
+                )
+
         if not model_folders:
-            print(f"错误: 未找到任何模型文件夹")
+            print(f"Error: No model folders found")
             return
 
-        print(f"找到 {len(model_folders)} 个模型文件夹")
+        print(f"Found {len(model_folders)} model folders")
 
-        # 创建统一的时间戳
+        # Create unified timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # 创建汇总结果文件
+        # Create summary result file
         summary_file = self.result_dir / f"summary_{timestamp}.txt"
-        # 创建详细结果文件（包含所有模型的完整输出）
+        # Create detailed result file (contains complete output of all models)
         detailed_file = self.result_dir / f"all_results_{timestamp}.txt"
 
         results = []
 
-        # 先写入详细结果文件的头部信息，然后保持文件打开以便实时追加
+        # Write header info to detailed result file first
         with open(detailed_file, "w", encoding="utf-8") as f:
             f.write(f"{'='*80}\n")
-            f.write(f"所有模型详细测试结果\n")
+            f.write(f"All Models Detailed Test Results\n")
             f.write(f"{'='*80}\n")
-            f.write(f"测试开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"总计模型数: {len(model_folders)}\n")
+            f.write(
+                f"Test start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            )
+            f.write(f"Total models: {len(model_folders)}\n")
             f.write(f"{'='*80}\n\n\n")
 
         for i, model_folder in enumerate(model_folders, 1):
-            print(f"\n\n[{i}/{len(model_folders)}] 处理模型文件夹: {model_folder.name}")
+            print(
+                f"\n\n[{i}/{len(model_folders)}] Processing model folder: {model_folder.name}"
+            )
 
             success, result = self.test_model(model_folder)
 
-            # 过滤结果，只保留Performance及之后的内容
+            # Filter result, keep only content from Performance onwards
             filtered_result = self.filter_result(result)
 
             results.append(
@@ -480,51 +509,51 @@ class ModelTesterClient:
                 }
             )
 
-            # 实时追加写入详细结果到文件
+            # Append detailed results to file in real-time
             with open(detailed_file, "a", encoding="utf-8") as f:
                 f.write(f"\n\n{'#'*80}\n")
-                f.write(f"# 模型 {i}/{len(model_folders)}: {model_folder.name}\n")
+                f.write(f"# Model {i}/{len(model_folders)}: {model_folder.name}\n")
                 f.write(f"{'#'*80}\n\n")
-                f.write(f"模型名称: {model_folder.name}\n")
-                f.write(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"测试结果: {'✓ 成功' if success else '✗ 失败'}\n")
+                f.write(f"Model name: {model_folder.name}\n")
+                f.write(f"Test time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"Test result: {'[PASS]' if success else '[FAIL]'}\n")
                 f.write(f"\n{'-'*80}\n")
-                f.write(f"执行输出:\n")
+                f.write(f"Execution output:\n")
                 f.write(f"{'-'*80}\n")
                 f.write(filtered_result)
                 f.write(f"\n{'-'*80}\n")
-                f.flush()  # 立即刷新到磁盘
+                f.flush()  # Flush to disk immediately
 
-            print(f"结果已实时写入: {detailed_file}")
+            print(f"Results written to: {detailed_file}")
 
-            # 等待一下再处理下一个模型
+            # Wait before processing next model
             if i < len(model_folders):
-                print("\n等待3秒后处理下一个模型...")
+                print("\nWaiting 3 seconds before processing next model...")
                 time.sleep(3)
 
-        # 在详细结果文件末尾追加汇总信息
+        # Append summary info at the end of detailed result file
         with open(detailed_file, "a", encoding="utf-8") as f:
             f.write(f"\n\n\n{'='*80}\n")
-            f.write(f"测试完成汇总\n")
+            f.write(f"Test Summary\n")
             f.write(f"{'='*80}\n")
-            f.write(f"测试结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"总计模型数: {len(results)}\n")
-            f.write(f"成功: {sum(1 for r in results if r['success'])}\n")
-            f.write(f"失败: {sum(1 for r in results if not r['success'])}\n")
+            f.write(f"Test end time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Total models: {len(results)}\n")
+            f.write(f"Passed: {sum(1 for r in results if r['success'])}\n")
+            f.write(f"Failed: {sum(1 for r in results if not r['success'])}\n")
             f.write(f"{'='*80}\n")
 
-        # 保存汇总结果
+        # Save summary results
         with open(summary_file, "w", encoding="utf-8") as f:
-            f.write(f"模型测试汇总报告\n")
-            f.write(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"总计模型数: {len(results)}\n")
-            f.write(f"成功: {sum(1 for r in results if r['success'])}\n")
-            f.write(f"失败: {sum(1 for r in results if not r['success'])}\n")
+            f.write(f"Model Test Summary Report\n")
+            f.write(f"Test time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Total models: {len(results)}\n")
+            f.write(f"Passed: {sum(1 for r in results if r['success'])}\n")
+            f.write(f"Failed: {sum(1 for r in results if not r['success'])}\n")
             f.write(f"\n{'='*80}\n\n")
 
             for i, result in enumerate(results, 1):
                 f.write(
-                    f"{i}. {result['model_name']}: {'✓ 成功' if result['success'] else '✗ 失败'}\n"
+                    f"{i}. {result['model_name']}: {'[PASS]' if result['success'] else '[FAIL]'}\n"
                 )
 
         self.parse_and_export_results(
@@ -532,58 +561,84 @@ class ModelTesterClient:
         )
 
         print(f"\n\n{'='*80}")
-        print(f"所有模型测试完成!")
-        print(f"汇总报告已保存到: {summary_file}")
-        print(f"详细结果已保存到: {detailed_file}")
+        print(f"All model tests completed!")
+        print(f"Summary report saved to: {summary_file}")
+        print(f"Detailed results saved to: {detailed_file}")
         print(f"{'='*80}")
 
 
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="x86端模型测试客户端")
-    parser.add_argument("--host", required=True, help="ARM开发板的IP地址")
+    parser = argparse.ArgumentParser(description="x86 Model Test Client")
+    parser.add_argument("--ip", required=True, help="ARM board IP address")
     parser.add_argument(
-        "--port", type=int, default=9999, help="ARM开发板监听的端口 (默认: 9999)"
+        "--port",
+        type=int,
+        default=9999,
+        help="ARM board listening port (default: 9999)",
     )
-    parser.add_argument("--models-dir", required=True, help="模型根目录路径")
+    parser.add_argument("--model_dir", required=True, help="Models root directory path")
     parser.add_argument(
-        "--no-golden",
-        action="store_true",
-        help="不使用golden文件进行数据对比（默认会使用）",
-    )
-    parser.add_argument(
-        "--repeat-count", type=int, help="重复执行次数（默认使用服务器默认值10）"
-    )
-    parser.add_argument(
-        "--npu-cores",
+        "-m",
+        "--model_list",
         type=str,
-        help="NPU核心编号，例如: '0,1,2,3'（默认使用服务器默认值'0,1,2,3'）",
+        default="",
+        help="List of specific models to test (default: all models in directory)",
     )
     parser.add_argument(
-        "--peak-performance",
+        "-e",
+        "--execution_times",
+        type=int,
+        default=-1,
+        help="Execution times per model (ms)",
+    )
+    parser.add_argument(
+        "-r",
+        "--repeat_count",
+        type=int,
+        default=10,
+        help="Repeat execution count (default: server default 10)",
+    )
+    parser.add_argument(
+        "-n",
+        "--npu_cores",
+        type=str,
+        default="0,1,2,3",
+        help="NPU core IDs, e.g.: '0,1,2,3' (default: server default '0,1,2,3')",
+    )
+    parser.add_argument(
+        "--peak_performance",
         type=float,
-        help="峰值性能，例如: 4.0（默认使用服务器默认值4.0）",
+        default=4.0,
+        help="Peak performance, e.g.: 4.0 (default: server default 4.0)",
+    )
+    parser.add_argument(
+        "--use_golden",
+        action="store_true",
+        help="Do not use golden files for data comparison (default: False)",
     )
 
     args = parser.parse_args()
 
-    # 直接构建 npu_runner 的命令行参数列表
-    runner_args = []
-    if args.repeat_count is not None:
-        runner_args.extend(["-r", str(args.repeat_count)])
-    if args.npu_cores is not None:
-        runner_args.extend(["-n", args.npu_cores])
-    if args.peak_performance is not None:
-        runner_args.extend(["--peak_performance", str(args.peak_performance)])
+    # Build npu_runner command line arguments list directly
+    runner_args = [
+        "-r",
+        str(args.repeat_count),
+        "-n",
+        args.npu_cores,
+        "--peak_performance",
+        str(args.peak_performance),
+    ]
 
     client = ModelTesterClient(
-        args.host,
+        args.ip,
         args.port,
         runner_args=runner_args,
-        use_golden=not args.no_golden,
+        use_golden=args.use_golden,
+        execution_times=args.execution_times,
     )
-    client.run_all_models(args.models_dir)
+    client.run_all_models(args.model_dir, args.model_list)
 
 
 if __name__ == "__main__":
